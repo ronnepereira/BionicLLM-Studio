@@ -1,0 +1,13 @@
+import {readFileSync,writeFileSync} from 'node:fs'
+const root=new URL('./',import.meta.url)
+let code=readFileSync(new URL('preview.js',root),'utf8')
+const start=code.indexOf(' // Neck with topology widening smoothly into shoulders.')
+const end=code.indexOf(' // Paint the facial relief',start)
+if(start<0||end<start)throw new Error('Preview sections not found')
+code=code.slice(0,start)+code.slice(end)
+code=code.split('\n').filter(line=>!line.startsWith(' for(const rad of [4.7,5.7])')).join('\n')
+code=code.replace('drawHead(315,410,27,angle)','drawHead(315,480,31.5,angle)')
+code=code.replace('drawHead(945,410,27,.38+angle)','drawHead(945,480,31.5,.38+angle)')
+code=code.replace("'Frente',315,925","'Frente',315,875").replace("'Vista em três quartos',945,925","'Vista em três quartos',945,875")
+writeFileSync(new URL('preview-face-only.js',root),code,'utf8')
+console.log('Face-only preview prepared; original preview retained.')

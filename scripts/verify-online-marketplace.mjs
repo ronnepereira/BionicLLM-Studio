@@ -1,0 +1,87 @@
+import { chromium, expect } from '@playwright/test'
+import { fileURLToPath } from 'node:url'
+const catalogUrl = 'https://cline.github.io/marketplace/catalog.json'
+const hermesUrl = 'https://nousresearch.github.io/hermes-agent/docs/api/plugin-catalog.json'
+const browser = await chromium.launch({ headless: true })
+try {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' })
+  const errors = [], requests = []
+  page.on('pageerror', error => errors.push(error.message))
+  page.on('request', request => requests.push(request.url()))
+  await page.addInitScript(() => {
+    if (localStorage.getItem('marketplace-fixture')) return
+    localStorage.setItem('chat-settings', JSON.stringify({ version: 0, state: { settings: { onboardingDone: true, language: 'pt-BR' } } }))
+    localStorage.setItem('marketplace-fixture', 'true')
+  })
+  const openCatalog = async () => {
+    await page.locator('aside').getByRole('button', { name: 'Habilidades', exact: true }).click()
+    await page.getByRole('tab', { name: 'Marketplace', exact: true }).click()
+    return page.getByRole('region', { name: 'Catálogos online', exact: true })
+  }
+  await page.goto('http://127.0.0.1:5274/')
+  let region = await openCatalog()
+  await region.getByRole('button', { name: 'Cline', exact: true }).click()
+  await expect(region.getByText(/\d+ itens no catálogo/)).toBeVisible({ timeout: 30000 })
+  expect(requests.filter(url => url === catalogUrl)).toHaveLength(1)
+  const cache = await page.evaluate(() => JSON.parse(localStorage.getItem('bionic-marketplace-cache-v1')))
+  const entries = cache.catalog.entries
+  expect(entries.length).toBeGreaterThan(100)
+  await region.getByRole('button', { name: 'Próxima página', exact: true }).click()
+  await expect(region.getByText(`Página 2 de ${Math.ceil(entries.length / 12)}`, { exact: true })).toBeVisible()
+  await region.getByRole('button', { name: 'Página anterior', exact: true }).click()
+  for (const [kind, label] of [['skill', 'Habilidades'], ['mcp', 'Servidores MCP'], ['plugin', 'Plugins']]) {
+    const count = entries.filter(entry => entry.type === kind).length
+    await expect(region.getByRole('button', { name: `${label} ${count}`, exact: true })).toBeVisible()
+  }
+  await region.getByRole('button', { name: /^Habilidades \d+$/ }).click()
+  const skill = entries.find(entry => entry.type === 'skill')
+  const search = page.getByLabel('Buscar habilidades e ferramentas', { exact: true })
+  await search.fill(skill.name)
+  await expect(region.getByRole('heading', { name: skill.name, exact: true })).toBeVisible()
+  await expect(region.getByRole('button', { name: /^Habilidades \d+$/ })).toHaveAttribute('aria-pressed', 'true')
+  await search.fill('')
+  await region.getByRole('button', { name: /^Plugins \d+$/ }).click()
+  await expect(region.getByText('Exige adaptação dos recursos do Cline').first()).toBeVisible()
+  await region.getByRole('button', { name: /^Todos os itens \d+$/ }).click()
+  await page.screenshot({ path: fileURLToPath(new URL('../docs/bionic-preview/17-marketplace-online.png', import.meta.url)), fullPage: true })
+  await region.getByRole('button', { name: 'Hermes', exact: true }).click()
+  await expect(region.getByText(/\d+ itens no catálogo/)).toBeVisible({ timeout: 30000 })
+  const hermesCache = await page.evaluate(() => JSON.parse(localStorage.getItem('bionic-marketplace-hermes-cache-v1')))
+  const hermesEntries = hermesCache.catalog.entries
+  expect(hermesEntries.filter(entry => entry.type === 'plugin').length).toBeGreaterThan(900)
+  expect(hermesEntries.filter(entry => entry.type === 'skill').length).toBeGreaterThan(100)
+  await region.getByRole('button', { name: /^Plugins \d+$/ }).click()
+  const camofox = hermesEntries.find(entry => entry.id === 'camofox')
+  await search.fill('camofox')
+  await expect(region.getByRole('button', { name: /^Plugins \d+$/ })).toHaveAttribute('aria-pressed', 'true')
+  await expect(region.getByRole('heading', { name: camofox.name, exact: true })).toBeVisible()
+  await expect(region.getByText('Revisar integração com o Hermes').first()).toBeVisible()
+  await page.screenshot({ path: fileURLToPath(new URL('../docs/bionic-preview/18-marketplace-hermes.png', import.meta.url)), fullPage: true })
+  await search.fill('')
+  await region.getByRole('button', { name: /^Todos os itens \d+$/ }).click()
+  await region.getByRole('button', { name: 'Todas as origens', exact: true }).click()
+  await expect(region.getByText(`${entries.length + hermesEntries.length} itens no catálogo`, { exact: true })).toBeVisible()
+  await page.route(hermesUrl, route => route.abort('internetdisconnected'))
+  await region.getByRole('button', { name: 'Hermes', exact: true }).click()
+  await region.getByRole('button', { name: 'Atualizar catálogo', exact: true }).click()
+  await expect(region.getByRole('alert')).toContainText('última lista salva')
+  await region.getByRole('button', { name: 'Cline', exact: true }).click()
+  await expect(region.getByRole('alert')).toHaveCount(0)
+  await page.route(catalogUrl, route => route.abort('internetdisconnected'))
+  await region.getByRole('button', { name: 'Atualizar catálogo', exact: true }).click()
+  await expect(region.getByRole('alert')).toContainText('última lista salva')
+  await page.reload()
+  region = await openCatalog()
+  await expect(region.getByText(`${entries.length + hermesEntries.length} itens no catálogo`, { exact: true })).toBeVisible()
+  await region.getByRole('button', { name: 'Cline', exact: true }).click()
+  await expect(region.getByText(`${entries.length} itens no catálogo`, { exact: true })).toBeVisible()
+  await page.setViewportSize({ width: 600, height: 1000 })
+  await expect(page.locator('body')).toHaveJSProperty('scrollWidth', 600)
+  const mcp = entries.find(entry => entry.type === 'mcp' && entry.install.args.includes('--') && entry.install.args[entry.install.args.indexOf('--') + 1] === 'npx')
+  await page.getByLabel('Buscar habilidades e ferramentas', { exact: true }).fill(mcp.name)
+  await region.getByRole('button', { name: 'Configurar MCP manualmente', exact: true }).first().click()
+  await expect(page.getByRole('tab', { name: 'Conectores', exact: true })).toHaveAttribute('aria-selected', 'true')
+  expect(requests.some(url => url.includes('registry.npmjs.org'))).toBe(false)
+  expect(errors).toEqual([])
+  console.log(JSON.stringify({ clineItems: entries.length, hermesItems: hermesEntries.length, filtersSearchCompatibility: true, independentSources: true, cachedOffline: true, compact: true, automaticInstallations: false }))
+} finally { await browser.close() }

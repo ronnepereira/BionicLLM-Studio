@@ -1,0 +1,8 @@
+{
+  "repository": "ronnepereira/BionicLLM-Studio",
+  "updatesEnabled": false,
+  "experimentalPlatforms": [
+    "linux",
+    "darwin"
+  ]
+}

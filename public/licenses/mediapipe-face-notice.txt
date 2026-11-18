@@ -1,0 +1,5 @@
+MediaPipe canonical_face_model.obj
+Source: https://github.com/google-ai-edge/mediapipe/blob/master/mediapipe/modules/face_geometry/data/canonical_face_model.obj
+Copyright Google LLC / MediaPipe Authors. Licensed under Apache License 2.0; see mediapipe-face-Apache-2.0.txt.
+Modified for BionicLLM Studio: JSON representation, feminine proportions, forehead, facial articulation, line renderer.
+Only fixed geometry is used. No MediaPipe runtime, camera, inference, or network service is loaded.

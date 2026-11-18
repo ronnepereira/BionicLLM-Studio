@@ -1,0 +1,60 @@
+/** @vitest-environment jsdom */
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+const fake = vi.hoisted(() => ({ native: true, status: vi.fn(), verify: vi.fn(), remove: vi.fn(), settings: vi.fn(), runtime: vi.fn(), refresh: vi.fn(), text: (source: string) => source }))
+vi.mock('../../../api/studio-whatsapp-meta', () => ({ metaAvailable: () => fake.native, metaStatus: fake.status, verifyMeta: fake.verify, removeMeta: fake.remove, saveMetaSettings: fake.settings, metaRuntime: fake.runtime }))
+vi.mock('../../../stores/metaRuntimeStore', () => ({ useMetaRuntimeStore: () => ({ view: null, phase: 'idle', refresh: fake.refresh }) }))
+vi.mock('../../../lib/ui-text', () => ({ useUiText: () => fake.text }))
+vi.mock('../MessageRuntimePanel', () => ({ MessageRuntimePanel: () => null }))
+import { MetaWhatsappConnector } from '../MetaWhatsappConnector'
+afterEach(cleanup)
+beforeEach(() => {
+  fake.native = true; localStorage.clear()
+  for (const mock of [fake.status, fake.verify, fake.remove, fake.settings, fake.runtime, fake.refresh]) mock.mockReset()
+  fake.status.mockResolvedValue(false)
+  fake.runtime.mockResolvedValue({ active: false, saved: { settings: { public_url: '', port: 18782 }, history: [] }, identity: null })
+})
+it('never collects secrets or invokes the backend from a browser preview', () => {
+  fake.native = false
+  render(<MetaWhatsappConnector />)
+  expect((screen.getByLabelText('Meta access token') as HTMLInputElement).disabled).toBe(true)
+  expect((screen.getByText('Generate verification token') as HTMLButtonElement).disabled).toBe(true)
+  expect(fake.status).not.toHaveBeenCalled(); expect(fake.runtime).not.toHaveBeenCalled()
+})
+it('clears all credential inputs immediately and stores no secrets in browser preferences', async () => {
+  let complete!: (value: unknown) => void
+  fake.verify.mockImplementation(() => new Promise(resolve => { complete = resolve }))
+  render(<MetaWhatsappConnector />)
+  await screen.findByText('Not configured')
+  fireEvent.change(screen.getByLabelText('Business phone number ID'), { target: { value: '1234567890' } })
+  fireEvent.change(screen.getByLabelText('Meta access token'), { target: { value: 'test_access_token_1234567890' } })
+  fireEvent.change(screen.getByLabelText('Meta app secret'), { target: { value: '0123456789abcdef0123456789abcdef' } })
+  fireEvent.change(screen.getByLabelText('Webhook verification token'), { target: { value: 'verify-token-1234567890' } })
+  fireEvent.click(screen.getByText('Verify and save'))
+  expect(fake.verify).toHaveBeenCalledOnce()
+  for (const label of ['Business phone number ID', 'Meta access token', 'Meta app secret', 'Webhook verification token']) expect((screen.getByLabelText(label) as HTMLInputElement).value).toBe('')
+  expect(localStorage.length).toBe(0)
+  await act(async () => { complete({ phone_id: '1234567890', display_phone: '5511999999999', name: 'Teste' }) })
+  expect(screen.getByText('Credential saved')).toBeTruthy()
+})
+it('only checks local credential presence at mount and preserves it if verification fails', async () => {
+  fake.status.mockResolvedValue(true); fake.verify.mockRejectedValue(new Error('Credenciais recusadas'))
+  render(<MetaWhatsappConnector />)
+  await screen.findByText('Credential saved')
+  expect(fake.verify).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByText('Verify saved credential'))
+  await screen.findByRole('alert')
+  expect(screen.getByText('Credential saved')).toBeTruthy()
+  expect(fake.remove).not.toHaveBeenCalled()
+})
+it('requires an explicit valid local port before saving webhook settings', async () => {
+  render(<MetaWhatsappConnector />)
+  await screen.findByText('Not configured')
+  fireEvent.change(screen.getByLabelText('Public webhook URL'), { target: { value: 'https://example.com/whatsapp/meta/webhook' } })
+  fireEvent.change(screen.getByLabelText('Local port'), { target: { value: '80' } })
+  fireEvent.click(screen.getByText('Save webhook address'))
+  await screen.findByRole('alert'); expect(fake.settings).not.toHaveBeenCalled()
+  fireEvent.change(screen.getByLabelText('Local port'), { target: { value: '18782' } })
+  fireEvent.click(screen.getByText('Save webhook address'))
+  await waitFor(() => expect(fake.settings).toHaveBeenCalledWith({ public_url: 'https://example.com/whatsapp/meta/webhook', port: 18782 }))
+})

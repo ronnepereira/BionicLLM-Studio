@@ -1,0 +1,187 @@
+name: BionicLLM - Verify and prepare installers
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Platform (all is required to prepare a draft release)'
+        type: choice
+        options: [windows, linux, darwin, all]
+        default: windows
+      draft:
+        description: 'Prepare a draft release after all builds succeed; never publish automatically'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bionic-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --test scripts/bionic-publication.test.mjs
+      - run: node scripts/bionic-publication.mjs audit
+      - run: npm run typecheck
+      - name: Lint publication and updater code
+        run: npx eslint scripts/bionic-*.mjs src/stores/updateStore.ts src/components/settings/AppUpdatesSettings.tsx src/components/settings/__tests__/bionic-app-updates.test.tsx src/stores/__tests__/bionic-private-updates.test.ts
+      - run: npx vitest run src/stores/__tests__/bionic-private-updates.test.ts src/components/settings/__tests__/bionic-app-updates.test.tsx src/stores/__tests__/updateStore.test.ts src/stores/__tests__/updateStore-autodownload.test.ts src/stores/__tests__/update-restarts-the-app.test.ts src/stores/__tests__/update-flushes-the-chats.test.ts
+
+  build:
+    needs: verify
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - platform: windows
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: msi
+          - platform: linux
+            runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            bundles: appimage,deb
+          - platform: darwin
+            runner: macos-15
+            target: aarch64-apple-darwin
+            bundles: app,dmg
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        if: github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == matrix.platform
+      - name: Select requested platform
+        id: selected
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          REQUESTED: ${{ inputs.platform }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          if [[ "$EVENT" != workflow_dispatch || "$REQUESTED" == all || "$REQUESTED" == "$PLATFORM" ]]; then
+            echo 'build=true' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        if: steps.selected.outputs.build == 'true'
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        if: steps.selected.outputs.build == 'true'
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      - uses: swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        if: steps.selected.outputs.build == 'true'
+        with:
+          workspaces: src-tauri -> target
+      - name: Validate release destination and key availability
+        if: steps.selected.outputs.build == 'true'
+        shell: bash
+        env:
+          SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          test -n "$SIGNING_KEY" || { echo 'Configure TAURI_SIGNING_PRIVATE_KEY before building release packages.'; exit 1; }
+          tag="$(node -p "'v' + require('./package.json').version")"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then tag="$GITHUB_REF_NAME"; fi
+          node scripts/bionic-publication.mjs validate "$tag"
+          echo "BIONIC_TAG=$tag" >> "$GITHUB_ENV"
+      - name: Install Linux prerequisites
+        if: steps.selected.outputs.build == 'true' && matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libgtk-3-dev libssl-dev libxdo-dev libxkbcommon-dev libvulkan-dev glslc libshaderc-dev cmake ninja-build
+      - name: Install Windows Vulkan SDK
+        if: steps.selected.outputs.build == 'true' && matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $version = '1.4.313.2'
+          $installer = Join-Path $env:RUNNER_TEMP 'vulkan-sdk.exe'
+          curl.exe -fL --retry 3 -o $installer "https://sdk.lunarg.com/sdk/download/$version/windows/vulkansdk-windows-X64-$version.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'Vulkan download failed' }
+          if ((Get-FileHash $installer -Algorithm SHA256).Hash.ToLower() -ne '34a921d951858274ca8e470e9d0a3b7624db41216b3908ccea9f73c8a1b7500e') { throw 'Vulkan checksum mismatch' }
+          $process = Start-Process -FilePath $installer -ArgumentList '--accept-licenses --default-answer --confirm-command install' -Wait -PassThru -WindowStyle Hidden
+          if ($process.ExitCode -ne 0) { throw 'Vulkan installation failed' }
+          "VULKAN_SDK=C:\VulkanSDK\$version" >> $env:GITHUB_ENV
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
+        if: steps.selected.outputs.build == 'true' && matrix.platform == 'windows'
+      - name: Install JavaScript dependencies
+        if: steps.selected.outputs.build == 'true'
+        run: npm ci
+      - name: Build and smoke test inference engine
+        if: steps.selected.outputs.build == 'true'
+        shell: bash
+        env:
+          BUILD_JOBS: '2'
+          LLAMA_BUILD_CACHE: ${{ matrix.platform == 'windows' && 'D:/lb' || format('{0}/lb', runner.temp) }}
+          SIDECAR_TARGET: ${{ matrix.target }}
+        run: |
+          bash scripts/build-llama.sh "$SIDECAR_TARGET"
+          bash scripts/build-llama.sh --check
+      - name: Build signed updater packages (no commercial code-signing certificate)
+        if: steps.selected.outputs.build == 'true'
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: '-'
+          BUNDLES: ${{ matrix.bundles }}
+          BUILD_TARGET: ${{ matrix.target }}
+        run: npm run tauri -- build --ci --target "$BUILD_TARGET" --bundles "$BUNDLES" --config src-tauri/tauri.bionic-release.conf.json
+      - name: Verify signatures and collect installers
+        if: steps.selected.outputs.build == 'true'
+        shell: bash
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          BUILD_TARGET: ${{ matrix.target }}
+        run: node scripts/bionic-release-assets.mjs collect "$PLATFORM" "src-tauri/target/$BUILD_TARGET/release/bundle" publication-output "$BIONIC_TAG"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: steps.selected.outputs.build == 'true'
+        with:
+          name: bionic-${{ matrix.platform }}
+          path: publication-output/*
+          if-no-files-found: error
+          retention-days: 3
+
+  draft:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.draft && inputs.platform == 'all')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: bionic-*
+          path: publication-output
+      - name: Create draft only after all signed artifacts are verified
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="$(node -p "'v' + require('./package.json').version")"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then tag="$GITHUB_REF_NAME"; fi
+          node scripts/bionic-publication.mjs validate "$tag"
+          node scripts/bionic-release-assets.mjs draft publication-output "$tag"

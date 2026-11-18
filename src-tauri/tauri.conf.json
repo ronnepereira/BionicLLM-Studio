@@ -1,0 +1,119 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-cli/schema.json",
+  "productName": "BionicLLM Studio",
+  "mainBinaryName": "BionicLLM Studio",
+  "version": "4.0.0",
+  "identifier": "com.bionicllm.studio",
+  "build": {
+    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:5273",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "title": "BionicLLM Studio",
+        "width": 1280,
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false,
+        "visible": false,
+        "decorations": false,
+        "transparent": true,
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' http://ipc.localhost; connect-src 'self' blob: http://ipc.localhost http://tauri.localhost http://localhost:* http://127.0.0.1:* https://lu-labs.ai https://lrrhheztdytyfpizvuup.supabase.co https://civitai.com https://*.civitai.com https://huggingface.co https://*.huggingface.co https://ollama.com https://openrouter.ai https://api.openai.com https://api.groq.com https://api.together.xyz https://api.deepseek.com https://api.mistral.ai https://api.anthropic.com https://de1.api.radio-browser.info https://nl1.api.radio-browser.info https://all.api.radio-browser.info ws://localhost:* ws://127.0.0.1:*; img-src 'self' data: blob: https: http://localhost:* http://127.0.0.1:* https://lrrhheztdytyfpizvuup.supabase.co https://*.civitai.com https://*.githubusercontent.com; media-src 'self' https: blob: http://localhost:* http://127.0.0.1:* https://lrrhheztdytyfpizvuup.supabase.co https://lu-labs.ai; font-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-src 'self' http://127.0.0.1:*; script-src 'self' 'wasm-unsafe-eval'"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEUyMENFN0NCQkY3MTk2MzkKUldRNWxuRy95K2NNNHZGOTFUa2xjc2tSNmkrSnFLdmplbDJzYkRQODlkcXhkNUhUSVNvQ1NKdGQK",
+      "endpoints": [
+        "https://github.com/ronnepereira/BionicLLM-Studio/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "publisher": "BionicLLM Studio",
+    "copyright": "Copyright (c) 2026 PurpleDoubleD. Licensed under AGPL-3.0.",
+    "category": "DeveloperTool",
+    "shortDescription": "BionicLLM Studio: chat, agentes e criação com IA no Windows",
+    "longDescription": "Aplicativo desktop de IA com modelos locais, ferramentas, agentes e criação de imagens e vídeos. Preserva o LU Engine e permite configurar provedores e endpoints próprios. Requer hardware e modelos compatíveis. Baseado no Locally Uncensored, sob licença AGPL-3.0.",
+    "license": "AGPL-3.0-only",
+    "resources": [
+      "resources/whisper_server.py",
+      "resources/voice_loop/lu_voice_loop/*.py",
+      "resources/voice_loop/requirements.txt",
+      "resources/voice_loop/models.json",
+      "resources/voice_loop/python.json",
+      "resources/abliterate/lu_abliterate.py",
+      "resources/abliterate/requirements.txt",
+      "resources/abliterate/constraints.txt"
+    ],
+    "externalBin": [
+      "bin/bu-llama-server"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
+    "macOS": {
+      "entitlements": "./Entitlements.plist",
+      "signingIdentity": "-"
+    },
+    "windows": {
+      "wix": {
+        "upgradeCode": "e14b61ae-b5ed-495b-b92e-9eb57a9b8018"
+      },
+      "nsis": {
+        "installMode": "both",
+        "displayLanguageSelector": true,
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "icons/nsis-header.bmp",
+        "sidebarImage": "icons/nsis-sidebar.bmp"
+      }
+    },
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      },
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libayatana-appindicator3-1",
+          "libvulkan1",
+          "libgomp1"
+        ],
+        "recommends": [
+          "git"
+        ]
+      },
+      "rpm": {
+        "depends": [
+          "webkit2gtk4.1",
+          "gtk3",
+          "libappindicator-gtk3",
+          "libvulkan.so.1()(64bit)",
+          "libgomp.so.1()(64bit)"
+        ],
+        "recommends": [
+          "git"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,71 @@
+<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>Teste nativo isolado</title><body>Teste isolado do navegador embutido. Não usa dados do aplicativo.<script>
+const invoke = window.__TAURI__.core.invoke
+const command = request => invoke('studio_browser', { request })
+const checks = []
+function check(value, name) { if (!value) throw new Error(name); checks.push(name) }
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
+async function readAt(path) {
+  const until = Date.now() + 12000
+  while (Date.now() < until) {
+    try { const page = await command({ action: 'read' }); if (page.url.endsWith(path) && page.elements.length) return page } catch {}
+    await sleep(100)
+  }
+  throw new Error('Página não ficou pronta: ' + path)
+}
+async function action(kind, label, extra = {}) {
+  const page = await command({ action: 'read' })
+  const element = page.elements.find(element => element.label === label)
+  if (!element) throw new Error('Elemento ausente: ' + label)
+  return command({ action: kind, token: page.token, target: element.ref, ...extra })
+}
+async function test() {
+  await command({ action: 'open', bounds: { x: 400, y: 80, width: 600, height: 600 } })
+  checks.push('Controle WebView2 criado dentro da janela principal')
+  await command({ action: 'navigate', url: 'http://127.0.0.1:5286/page' })
+  let page = await readAt('/page')
+  check(page.text.includes('IPC: undefined / undefined'), 'Página externa não recebeu __TAURI__ nem __TAURI_INTERNALS__')
+  const literal = "Teste '</scr" + "ipt> literal"
+  await action('type', 'Nome', { text: literal })
+  await action('click', 'Salvar')
+  page = await command({ action: 'read' })
+  check(page.text.includes('Salvo: ' + literal), 'Digitação literal e clique chegaram ao formulário real')
+  await action('select', 'Categoria', { text: 'pesquisa' })
+  page = await command({ action: 'read' })
+  check(page.text.includes('Categoria: pesquisa'), 'Seleção nativa de campo')
+  await action('focus', 'Nome')
+  page = await command({ action: 'read' })
+  await command({ action: 'press', token: page.token, text: 'Enter' })
+  page = await command({ action: 'read' })
+  check(page.text.includes('Envios: 2'), 'Tecla Enter real pelo protocolo do WebView2')
+  await command({ action: 'scroll', token: page.token, y: 800 })
+  page = await command({ action: 'read' })
+  check(page.scrollY > 0, 'Rolagem real do documento')
+  const stale = page.token
+  await action('click', 'Próxima página')
+  page = await readAt('/next')
+  check(page.text.includes('Segunda página'), 'Link target=_blank abriu no mesmo navegador embutido')
+  try { await command({ action: 'scroll', token: stale, y: 10 }); throw new Error('Token antigo foi aceito') } catch (error) { check(!String(error).includes('Token antigo foi aceito'), 'Referência vencida rejeitada após navegação') }
+  await command({ action: 'back' })
+  await readAt('/page')
+  checks.push('Voltar pelo histórico nativo')
+  for (const url of ['file:///C:/Windows/win.ini', 'javascript:alert(1)', 'https://tauri.localhost']) {
+    let denied = false
+    try { await command({ action: 'navigate', url }) } catch { denied = true }
+    check(denied, 'Endereço interno/perigoso recusado: ' + url.split(':')[0])
+  }
+  await command({ action: 'hide' })
+  let denied = false
+  try { await command({ action: 'read' }) } catch { denied = true }
+  check(denied, 'Agente não lê/interage com painel oculto')
+  await command({ action: 'open', bounds: { x: 400, y: 80, width: 500, height: 500 } })
+  await readAt('/page')
+  await command({ action: 'close' })
+  checks.push('Ocultar, redimensionar, reabrir e fechar o controle nativo')
+  const discovery = await invoke('studio_skills_scan', { chooseFolder: false })
+  check(discovery.skills.length > 0, 'Busca nativa encontrou bibliotecas reais de skills no PC: ' + discovery.skills.length)
+  const available = discovery.skills.find(skill => skill.importable)
+  const markdown = await invoke('studio_skill_read', { path: available.path })
+  check(typeof markdown === 'string' && markdown.length > 0, 'Leitura de SKILL.md descoberto sem executar suas instruções')
+}
+test().then(() => invoke('probe_finish', { report: { ok: true, checks } })).catch(error => invoke('probe_finish', { report: { ok: false, error: String(error), checks } }))
+</script></body></html>

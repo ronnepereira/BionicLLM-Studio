@@ -1,0 +1,21 @@
+{
+  "views": [
+    "chat",
+    "Acesso remoto",
+    "Criar",
+    "Voz",
+    "Comparar",
+    "Benchmark",
+    "Modelos",
+    "Habilidades",
+    "Agentes",
+    "Agenda",
+    "Configurações",
+    "Configurações/Geral",
+    "Configurações/Mecanismos de IA",
+    "Configurações/Agente",
+    "Configurações/Voz e acesso remoto",
+    "Configurações/Sobre"
+  ],
+  "findings": []
+}

@@ -1,0 +1,6 @@
+import http from 'node:http'
+const page = `<!doctype html><meta charset="utf-8"><title>Página de teste Bionic</title><style>body{font:16px sans-serif;padding:20px} .space{height:1800px}</style><h1>Teste do navegador interno</h1><p id="ipc"></p><form id="form"><label>Nome<input id="name"></label><button>Salvar</button></form><label>Categoria<select id="category"><option value="geral">Geral</option><option value="pesquisa">Pesquisa</option></select></label><p id="result"></p><p id="chosen"></p><p id="count">Envios: 0</p><a href="/next" target="_blank">Próxima página</a><div class="space"></div><p>Fim da página</p><script>ipc.textContent='IPC: '+typeof window.__TAURI__+' / '+typeof window.__TAURI_INTERNALS__;let sends=0;form.onsubmit=event=>{event.preventDefault();result.textContent='Salvo: '+document.getElementById('name').value;count.textContent='Envios: '+(++sends)};category.onchange=()=>chosen.textContent='Categoria: '+category.value</script>`
+http.createServer((request, response) => {
+  response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+  response.end(request.url === '/next' ? '<!doctype html><title>Segunda página</title><h1>Segunda página</h1><a href="/page">Página inicial</a>' : page)
+}).listen(5286, '127.0.0.1', () => console.log('Isolated browser probe server: 127.0.0.1:5286'))

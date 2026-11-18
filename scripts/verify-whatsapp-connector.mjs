@@ -1,0 +1,33 @@
+import { chromium, expect } from '@playwright/test'
+import { fileURLToPath } from 'node:url'
+const browser = await chromium.launch({ headless: true })
+try {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' })
+  const errors = [], messaging = []
+  page.on('pageerror', error => errors.push(error.message))
+  page.on('request', request => { if (/whatsapp\.(?:net|com)|graph\.facebook\.com/.test(new URL(request.url()).hostname)) messaging.push(request.url()) })
+  await page.addInitScript(() => localStorage.setItem('chat-settings', JSON.stringify({ version: 0, state: { settings: { onboardingDone: true, language: 'pt-BR' } } })))
+  await page.goto('http://127.0.0.1:5274/')
+  await page.locator('aside').getByRole('button', { name: 'Habilidades', exact: true }).click()
+  await page.getByRole('tab', { name: 'Conectores', exact: true }).click()
+  const panel = page.getByTestId('whatsapp-connector')
+  await panel.locator('summary').click()
+  await panel.evaluate(element => element.scrollIntoView({ block: 'start' }))
+  await expect(panel.getByRole('button', { name: 'Instalar componente do WhatsApp', exact: true })).toBeDisabled()
+  await expect(panel.getByRole('button', { name: 'Conectar ou gerar QR Code', exact: true })).toBeDisabled()
+  await expect(panel.getByLabel('Agente responsável', { exact: true })).toBeDisabled()
+  await expect(panel.getByRole('checkbox')).not.toBeChecked()
+  await expect(panel.getByRole('checkbox')).toBeDisabled()
+  await expect(panel.getByRole('img')).toHaveCount(0)
+  await expect(panel.getByText(/Apenas vincular a conta não ativa as respostas/)).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Conectores MCP', exact: true })).toBeVisible()
+  await page.screenshot({ path: fileURLToPath(new URL('../docs/bionic-preview/22-whatsapp-qr.png', import.meta.url)), fullPage: true })
+  await panel.getByRole('region', { name: 'Receptor do WhatsApp', exact: true }).evaluate(element => element.scrollIntoView({ block: 'start' }))
+  await expect(panel.getByRole('button', { name: 'Ativar receptor', exact: true })).toBeDisabled()
+  await page.screenshot({ path: fileURLToPath(new URL('../docs/bionic-preview/23-whatsapp-receptor.png', import.meta.url)), fullPage: true })
+  await page.setViewportSize({ width: 600, height: 1000 })
+  await expect(page.locator('body')).toHaveJSProperty('scrollWidth', 600)
+  await expect(panel.getByLabel('IDs dos chats permitidos', { exact: true })).toBeDisabled()
+  expect(errors).toEqual([]); expect(messaging).toEqual([])
+  console.log(JSON.stringify({ portuguese: true, desktopOnly: true, noFakeQrOrAccounts: true, reviewByDefault: true, mcpPreserved: true, compact: true, noWhatsAppOrMetaRequests: true }))
+} finally { await browser.close() }
