@@ -9,7 +9,7 @@ export const STUDIO_DESKTOP_GUIDE = {
   agents: 'Agentes, Habilidades and Agenda are in the left navigation. Configurações → Agente covers personas, memory, permissions, sub-agents, MCP servers, Coding Agent and the search provider. Chat and Code show clarification choices above the message box when the model requests input.',
   audio: 'Configurações → Voz e acesso remoto (Settings → Voice & Remote), in Speech, to install faster-whisper. In Chat or Código, open Transcrever áudio beside the dictation mic to use the microphone, choose media or enter a direct HTTPS audio/video file link. Preview/edit the transcript, then use it in the message or save as TXT. YouTube/Vimeo watch pages are not direct media URLs; use an authorized download or a direct file link. The model cannot turn on the microphone by itself.',
   backups: 'Configurações → Geral contains Chat Backup (Backup do chat), import from other chatbots, privacy and troubleshooting. Voice & Remote also contains the remote-access and local API sections.',
-  updates: 'The desktop updater checks GitHub releases. Use the update notification or Configurações → Sobre to check for a new version and confirm the installation.',
+  updates: 'The desktop updater checks GitHub releases. Use the update notification or Settings → General → Updates → Check for updates (Configurações → Geral → Atualizações → Verificar atualizações). The app asks before installing.',
 } as const
 
 export function withStudioCapabilities(base: string): string {

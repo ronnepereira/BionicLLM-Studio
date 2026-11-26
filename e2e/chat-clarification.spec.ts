@@ -40,6 +40,7 @@ for (const surface of ['Chat', 'Code']) {
     const first = JSON.parse(recorded[0])
     expect(first.messages[0].content).toContain('studio-question')
     expect(first.messages[0].content).toContain('Configurações → Geral → Aparência → Tamanho da fonte do chat')
+    expect(first.messages[0].content).toContain('Configurações → Geral → Atualizações → Verificar atualizações')
     const reply = JSON.parse(recorded.at(-1)!)
     expect(reply.messages).toEqual(expect.arrayContaining([
       expect.objectContaining({ role: 'assistant', content: expect.stringContaining(question) }),
