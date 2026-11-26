@@ -21,3 +21,10 @@ Veja [como contribuir](CONTRIBUTING.md), [como preparar uma versão](docs/PUBLIC
 ## Licença e créditos
 
 [AGPL-3.0-only](LICENSE). Consulte [os créditos de origem](third-party/UPSTREAM-NOTICE.md) e os [avisos de componentes de terceiros](third-party/).
+
+
+## Apoie o desenvolvimento
+
+Gostou do BionicLLM Studio? Apoie o desenvolvimento pagando um café.
+
+[![BUY ME COFFE](https://img.shields.io/badge/BUY%20ME%20COFFE-FFC439?style=for-the-badge&logo=paypal&logoColor=003087)](https://www.paypal.com/donate/?business=ronne.pereira%40gmail.com&item_name=Apoio%20ao%20BionicLLM%20Studio&currency_code=BRL)
