@@ -13,9 +13,14 @@ Output (one JSON per line on stdout):
   {"error": "..."}
 """
 
+from __future__ import annotations
+
 import sys
 import json
 import os
+import re
+import shutil
+import stat
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -121,6 +126,42 @@ def transcribe_file(model, path: str):
     return " ".join([s.text for s in segments]).strip(), info.language
 
 
+BASE_REPO_ID = "Systran/faster-whisper-base"
+
+
+def cached_base_snapshot() -> Path | None:
+    from huggingface_hub.constants import HF_HUB_CACHE
+    from huggingface_hub.file_download import repo_folder_name
+
+    repo = Path(HF_HUB_CACHE) / repo_folder_name(repo_id=BASE_REPO_ID, repo_type="model")
+    try:
+        revision = (repo / "refs" / "main").read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return None
+    if re.fullmatch(r"[a-f0-9]{40}", revision):
+        folder = repo / "snapshots" / revision
+        if folder.is_dir():
+            return folder
+    return None
+
+
+def windows_cache_blob(path: Path) -> Path | None:
+    """Locate a Hub blob without traversing a link blocked by RedirectionGuard."""
+    try:
+        link = Path(os.readlink(path))
+        if link.parent.parts != ("..", "..", "blobs"):
+            return None
+        if not re.fullmatch(r"(?:[a-f0-9]{40}|[a-f0-9]{64})", link.name):
+            return None
+        blob = path.parents[2] / "blobs" / link.name
+        metadata = blob.lstat()
+        if stat.S_ISREG(metadata.st_mode) and metadata.st_size > 0:
+            return blob
+    except OSError:
+        pass
+    return None
+
+
 def load_base_model():
     from faster_whisper import WhisperModel
     from faster_whisper.utils import download_model
@@ -130,32 +171,46 @@ def load_base_model():
     try:
         folder = Path(download_model("base", local_files_only=True))
     except LocalEntryNotFoundError:
-        folder = Path(download_model("base"))
+        # The Hub may reject the local snapshot before returning its path if
+        # Windows prevents it from following the files in that snapshot.
+        folder = cached_base_snapshot() if os.name == "nt" else None
+        if folder is None:
+            folder = Path(download_model("base"))
 
-    # A snapshot can exist even when a cached blob is empty or a link points
-    # to a missing blob. A normal Hub download treats that file as cached.
-    for filename in ("model.bin", "config.json"):
+    # A snapshot can contain empty or missing blobs, or links that Windows
+    # RedirectionGuard refuses to follow inside the app's child process.
+    for filename in ("model.bin", "config.json", "tokenizer.json", "vocabulary.txt"):
+        path = folder / filename
+        blob = None
         try:
-            if (folder / filename).stat().st_size > 0:
+            if path.stat().st_size > 0:
                 continue
         except FileNotFoundError:
             pass
+        except OSError as e:
+            if getattr(e, "winerror", None) != 448:
+                raise
+            blob = windows_cache_blob(path)
         print(f"Repairing faster-whisper cache: {filename}", file=sys.stderr, flush=True)
         try:
             # Download beside the snapshot. Some Hub versions keep a broken
             # pointer even after forcing a download into the shared cache.
             with TemporaryDirectory(prefix=".bionic-repair-", dir=folder) as staging:
-                repaired = Path(hf_hub_download(
-                    "Systran/faster-whisper-base",
-                    filename,
-                    revision=folder.name,
-                    local_dir=staging,
-                    force_download=True,
-                    token=False,
-                ))
+                if blob is not None:
+                    repaired = Path(staging) / filename
+                    shutil.copyfile(blob, repaired)
+                else:
+                    repaired = Path(hf_hub_download(
+                        BASE_REPO_ID,
+                        filename,
+                        revision=folder.name,
+                        local_dir=staging,
+                        force_download=True,
+                        token=False,
+                    ))
                 if repaired.stat().st_size == 0:
                     raise ValueError("Empty model file after download")
-                os.replace(repaired, folder / filename)
+                os.replace(repaired, path)
         except Exception as e:
             print(f"Whisper cache repair failed: {type(e).__name__}", file=sys.stderr, flush=True)
             raise RuntimeError("O arquivo do modelo Whisper está incompleto. Conecte-se à internet e tente transcrever novamente para reparar o download.") from e
