@@ -6,7 +6,7 @@ O repositório `ronnepereira/BionicLLM-Studio` é o destino do código e das ver
 
 O desenvolvimento continua na pasta original. `node scripts/bionic-publication.mjs export <nova-pasta-fora-do-projeto>` exporta os arquivos atuais, incluindo alterações locais, sem copiar `.git`, histórico, `.env`, credenciais, dependências, caches, relatórios de trabalho não rastreados, modelos ou instaladores. Mantém as configurações de compilação e padrões necessários. Configurações pessoais ficam nos diretórios de dados do usuário, fora do pacote.
 
-O exportador aplica regras de inclusão e faz uma busca de credenciais conhecidas. Essa verificação tem limites e complementa a revisão dos arquivos. `SOURCE-MANIFEST.json` registra os arquivos e seus hashes. Os workflows originais são mantidos como referência com todos os jobs desativados; o único fluxo operacional novo é `bionic-desktop.yml`. O README original e a licença AGPL-3.0 são preservados.
+O exportador aplica regras de inclusão e faz uma busca de credenciais conhecidas. Essa verificação tem limites e complementa a revisão dos arquivos. `SOURCE-MANIFEST.json` registra os arquivos e seus hashes. A publicação atual usa `bionic-desktop.yml`. A licença AGPL-3.0 e os créditos de origem acompanham o código.
 
 ## Chave de atualização
 
@@ -29,7 +29,7 @@ O build de instaladores no Actions é iniciado pelo workflow manual. Em cada rel
 
 Os instaladores ficam como artifacts por três dias. Com `all` e a opção de rascunho, o workflow cria uma **release de rascunho** depois dos três builds, com instaladores, hashes SHA-256 e `latest.json`. Uma release local pode conter somente os sistemas verificados. Em ambos os casos, confira a assinatura contra a chave pública e publique o rascunho após revisar os arquivos. O `latest.json` deve listar somente os pacotes disponíveis.
 
-Os executores são os padrões do GitHub. Em repositório privado, consomem a franquia do plano; não são ilimitados. Manter orçamento pago em zero e verificar a franquia antes dos builds de várias plataformas. O fluxo não altera faturamento. Nenhum serviço de assinatura pago é usado.
+Os executores são os padrões do GitHub. O fluxo de publicação usa os executores padrão e não altera o faturamento.
 
 ## Atualizações pelo app
 

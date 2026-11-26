@@ -121,13 +121,9 @@ export const ALLOWED = [
   { rule: 'server-path', files: /^src\/api\/agents\/architect\.ts$/, why: 'An example path inside a prompt for the coding agent.' },
   { rule: 'money', files: /^src\/lib\/__tests__\/surgical-edit\.test\.ts$/, why: 'A test value with a dollar sign in it.' },
   // The comparison pages of the website name other services and their public prices.
-  { rule: 'vendor', files: /^(src\/lib\/__tests__\/cloud-comparisons\.test\.ts|e2e\/cloud-comparisons\.spec\.ts|scripts\/check-cloud-sales\.mjs)$/, text: /venice/i, why: 'A competitor on a public comparison page.' },
-  { rule: 'money', files: /^(src\/lib\/__tests__\/cloud-comparisons\.test\.ts|e2e\/cloud-comparisons\.spec\.ts)$/, why: 'Public prices of competitors, as the comparison pages print them.' },
-  { rule: 'money', files: /^scripts\/check-cloud-sales\.mjs$/, text: /tokensForMoney/, why: 'The pattern that keeps "tokens for money" sentences off the site.' },
   // Parity tools: they read a checkout of the web app and need its paths and
   // the names of its tables to do that. Code only; their comments are clean.
-  { rule: 'server-path', files: /^scripts\/(check-cloud-sales|create-chat-mirror|create-chat-stack-probe|studio-snapshot)\.mjs$/, text: /['"`]/, why: 'Reads the web checkout by path.' },
-  { rule: 'server-constant', files: /^scripts\/check-cloud-sales\.mjs$/, text: /['"`/]/, why: 'Reads the web price tables by name.' },
+  { rule: 'server-path', files: /^scripts\/(create-chat-mirror|create-chat-stack-probe|studio-snapshot)\.mjs$/, text: /['"`]/, why: 'Reads the web checkout by path.' },
   { rule: 'server-path', files: /^src\/.*__tests__\/[\w.-]+\.tsx?$/, text: /['"]apps\/web[\w./-]*['"]|web\('lib\/billing/, why: 'A parity test that reads the web checkout by path (skipped without LU_WEB_REPO).' },
   { rule: 'server-constant', files: /^src\/lib\/(create\/__tests__\/web-parity|render\/__tests__\/(katalog-paritaet-web|sota-models))\.test\.ts$/, text: /^(?!\s*(\/\/|\*|\/\*))/, why: 'A parity test that reads the web price table by its names. Code lines only.' },
   { rule: 'money', files: /^src-tauri\/src\/commands\/computer\/desk\/sensitive\.rs$/, text: /"Pay \$12\.00"/, why: 'A made up label of a button in some shop, as test data for the rule that a click on it needs the user. Not a price of ours.' },

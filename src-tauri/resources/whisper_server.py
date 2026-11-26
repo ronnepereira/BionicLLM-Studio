@@ -1,5 +1,5 @@
 """
-Persistent faster-whisper server for Locally Uncensored.
+Persistent faster-whisper server for BionicLLM Studio.
 Communicates via stdin/stdout with line-based JSON protocol.
 
 Input (one JSON per line on stdin):

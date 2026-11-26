@@ -266,7 +266,7 @@ describe('die Zahlen des Wolkentors', () => {
     // Vorbehalte stehen im Messbericht selbst (Abschnitt 13.4 und 13.5).
     const changelog = readFileSync(resolve(__dirname, '..', '..', '..', 'CHANGELOG.md'), 'utf8')
       .replace(/\s+/g, ' ')
-    const abschnitt = changelog.split('## [')[1] ?? ''
+    const abschnitt = changelog.split('## [').find((section) => section.startsWith('3.0.8]')) ?? ''
     for (const [muster, warum] of [
       [/refusals in (11|100)% of answers/, 'eine Quote, die niemand gezaehlt hat'],
       [/managed to drop|dropped refusals|drop refusal rates/i, 'eine Ursachenbehauptung'],

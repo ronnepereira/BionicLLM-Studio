@@ -46,8 +46,8 @@
     "publisher": "BionicLLM Studio",
     "copyright": "Copyright (c) 2026 PurpleDoubleD. Licensed under AGPL-3.0.",
     "category": "DeveloperTool",
-    "shortDescription": "BionicLLM Studio: chat, agentes e criação com IA no Windows",
-    "longDescription": "Aplicativo desktop de IA com modelos locais, ferramentas, agentes e criação de imagens e vídeos. Preserva o LU Engine e permite configurar provedores e endpoints próprios. Requer hardware e modelos compatíveis. Baseado no Locally Uncensored, sob licença AGPL-3.0.",
+    "shortDescription": "BionicLLM Studio: chat, agentes e criação com IA local ou na nuvem",
+    "longDescription": "Estúdio de IA para chat, código, agentes e criação de imagens e vídeos. A execução local exige hardware compatível e modelos baixados. Alguns recursos exigem componentes adicionais. Ao usar serviços de nuvem, as solicitações são enviadas aos provedores selecionados e podem estar sujeitas a limites, cobrança e políticas de conteúdo. Revise as permissões das ferramentas e o destino dos dados antes de executar tarefas. Licença AGPL-3.0-only.",
     "license": "AGPL-3.0-only",
     "resources": [
       "resources/whisper_server.py",

@@ -54,19 +54,7 @@ const SICHTBARE_TEXTE = [
   'src/lib/release-notes.ts',
   'CHANGELOG.md',
   'README.md',
-  'docs/index.html',
-  'docs/llms.txt',
-  'docs/llms-full.txt',
-  'docs/guide/agent/index.html',
-  'docs/guide/chat/index.html',
-  'docs/guide/cloud/index.html',
-  'docs/guide/code/index.html',
-  'docs/guide/create/index.html',
-  'docs/guide/faq-and-glossary/index.html',
-  'docs/guide/first-start/index.html',
-  'docs/guide/install/index.html',
-  'docs/guide/settings-and-troubleshooting/index.html',
-  'docs/guide/what-it-is/index.html',
+
 ]
 
 function maskieren(s: string): string {

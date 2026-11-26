@@ -1,14 +1,14 @@
 @echo off
-title Locally Uncensored - Dev Setup
+title BionicLLM Studio - Dev Setup
 echo.
 powershell -NoProfile -Command ^
-  "Write-Host '';Write-Host '   +---------------------------------------------------------------+' -F Yellow;Write-Host '   | This script starts Locally Uncensored in DEVELOPER mode.     |' -F Yellow;Write-Host '   | It runs via Vite at http://localhost:5173 in your browser,   |' -F Yellow;Write-Host '   | which has fewer features than the installed desktop app.     |' -F Yellow;Write-Host '   |                                                               |' -F Yellow;Write-Host '   | Just want to USE the app? Download the installer instead:    |' -F Yellow;Write-Host '   | https://github.com/PurpleDoubleD/locally-uncensored/releases |' -F Cyan;Write-Host '   +---------------------------------------------------------------+' -F Yellow;Write-Host ''"
+  "Write-Host '';Write-Host '   +---------------------------------------------------------------+' -F Yellow;Write-Host '   | This script starts BionicLLM Studio in DEVELOPER mode.     |' -F Yellow;Write-Host '   | It runs via Vite at http://localhost:5173 in your browser,   |' -F Yellow;Write-Host '   | which has fewer features than the installed desktop app.     |' -F Yellow;Write-Host '   |                                                               |' -F Yellow;Write-Host '   | Just want to USE the app? Download the installer instead:    |' -F Yellow;Write-Host '   | https://github.com/ronnepereira/BionicLLM-Studio/releases |' -F Cyan;Write-Host '   +---------------------------------------------------------------+' -F Yellow;Write-Host ''"
 echo.
 choice /C YN /T 8 /D Y /M "Continue with developer setup? (Y/N, auto-Yes in 8s)"
 if errorlevel 2 (
     echo.
     echo Cancelled. Download the installer from:
-    echo   https://github.com/PurpleDoubleD/locally-uncensored/releases/latest
+    echo   https://github.com/ronnepereira/BionicLLM-Studio/releases/latest
     pause
     exit /b 0
 )

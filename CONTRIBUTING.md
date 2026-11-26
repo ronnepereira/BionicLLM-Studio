@@ -1,4 +1,4 @@
-# Contributing to Locally Uncensored
+# Contributing to BionicLLM Studio
 
 Thanks for your interest in contributing! This project thrives on community input.
 
@@ -6,7 +6,7 @@ Thanks for your interest in contributing! This project thrives on community inpu
 
 ### Prerequisites
 
-- **Node.js** 18+ ([download](https://nodejs.org/))
+- **Node.js** 22+ ([download](https://nodejs.org/))
 - **Ollama** ([download](https://ollama.com/)) — for text model testing
 - **ComfyUI** (optional) — only needed for image/video gen features
 - **Git** (obviously)
@@ -14,8 +14,8 @@ Thanks for your interest in contributing! This project thrives on community inpu
 ### Dev Setup
 
 ```bash
-git clone https://github.com/PurpleDoubleD/locally-uncensored.git
-cd locally-uncensored
+git clone https://github.com/ronnepereira/BionicLLM-Studio.git
+cd BionicLLM-Studio
 npm install
 ```
 
@@ -77,7 +77,7 @@ src/
 
 ### Bug Reports
 
-Use the [Bug Report template](https://github.com/PurpleDoubleD/locally-uncensored/issues/new?template=bug_report.yml). Include:
+Use the [Bug Report template](https://github.com/ronnepereira/BionicLLM-Studio/issues/new?template=bug_report.yml). Include:
 
 - Steps to reproduce
 - Expected vs actual behavior
@@ -86,7 +86,7 @@ Use the [Bug Report template](https://github.com/PurpleDoubleD/locally-uncensore
 
 ### Feature Requests
 
-Use the [Feature Request template](https://github.com/PurpleDoubleD/locally-uncensored/issues/new?template=feature_request.yml). Describe:
+Use the [Feature Request template](https://github.com/ronnepereira/BionicLLM-Studio/issues/new?template=feature_request.yml). Describe:
 
 - What problem it solves
 - How you'd expect it to work
@@ -141,7 +141,7 @@ No need for conventional commits — just be clear about what changed.
 
 ## Questions?
 
-Open a thread in [Discussions](https://github.com/PurpleDoubleD/locally-uncensored/discussions) — don't use Issues for questions.
+Use [GitHub Issues](https://github.com/ronnepereira/BionicLLM-Studio/issues) to ask questions about the project.
 
 ## License
 
@@ -150,6 +150,5 @@ By contributing, you agree that your contributions will be licensed under the AG
 
 ## Where to ask
 
-- **Discord:** https://locallyuncensored.com/discord — real-time chat with users and maintainers. Fastest path for questions, design discussions, and coordination on larger PRs.
-- **GitHub Discussions:** https://github.com/PurpleDoubleD/locally-uncensored/discussions — threaded, searchable. Good for long-form questions or proposals you want archived.
+- [GitHub Issues](https://github.com/ronnepereira/BionicLLM-Studio/issues)
 - **GitHub Issues:** bug reports and well-scoped feature requests only. Anything open-ended → Discord or Discussions first.

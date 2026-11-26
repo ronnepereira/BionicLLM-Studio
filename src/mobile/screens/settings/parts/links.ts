@@ -1,3 +1,4 @@
+import publication from '../../../../../bionic-publication.json'
 /**
  * Every address this strand opens in the system browser, and the one way to
  * open it. Buying and managing a plan happen on the website, never in the
@@ -22,9 +23,9 @@ export const LINKS = {
   website: CLOUD_BASE,
   /** Where an account is deleted without the app: the deletion page of the website (policy/links.ts). */
   deleteAccount: LEGAL_LINKS.deleteAccount,
-  source: 'https://github.com/purpledoubled/locally-uncensored',
+  source: `https://github.com/${publication.repository}`,
   /** HEAD resolves to the default branch, whatever it is called. */
-  licenses: 'https://github.com/purpledoubled/locally-uncensored/blob/HEAD/LICENSE',
+  licenses: `https://github.com/${publication.repository}/blob/HEAD/LICENSE`,
 } as const
 
 /** Checkout of one plan. `src` tells the website the visit came from the phone app. */

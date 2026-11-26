@@ -112,7 +112,7 @@ export function toMarkdownReport(
   const lines = [
     '# Local model benchmark',
     '',
-    `Generated ${generatedAt} by Locally Uncensored.`,
+    `Generated ${generatedAt} by BionicLLM Studio.`,
     '',
   ]
   if (board.length === 0) {

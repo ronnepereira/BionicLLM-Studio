@@ -1,5 +1,5 @@
 @echo off
-title Locally Uncensored - Update
+title BionicLLM Studio - Update
 color 0D
 echo.
 echo       [95m╔═══════════════════════════════════════╗[0m
@@ -24,11 +24,11 @@ echo.
 
 :: Pull latest changes
 echo [*] Checking for updates...
-git pull origin master
+git pull --ff-only origin main
 if %errorlevel% neq 0 (
     echo.
     echo [!] Update failed. You may have local changes.
-    echo     Run: git stash ^&^& git pull origin master
+    echo     Run: git stash ^&^& git pull --ff-only origin main
     pause
     exit /b 1
 )

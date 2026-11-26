@@ -142,7 +142,7 @@ Gemeinsamer Aufbau jeder Seite: Kopfzeile (44 pt hoch plus Safe Area oben), roll
 
 **A1 Welcome** (`/welcome`)
 Zweck: Sagen, was LU auf dem Handy ist, und den Einstieg anbieten.
-Aufbau: mittig Monogramm 56 pt, Titel "Locally Uncensored", ein Absatz "Private AI on your phone. Pick a model once, then chat without a connection. Nothing leaves this phone unless you turn on Cloud." Unten zwei Knoepfe.
+Aufbau: mittig Monogramm 56 pt, Titel "BionicLLM Studio", ein Absatz "Private AI on your phone. Pick a model once, then chat without a connection. Nothing leaves this phone unless you turn on Cloud." Unten zwei Knoepfe.
 Elemente:
 - A1.1 "Get started" (Hauptknopf): weiter zu A2.
 - A1.2 "I have an LU Cloud account": oeffnet E2 Anmelden als Seite im Ablauf, nach Erfolg weiter zu A2 mit dem Zusatzknopf "Skip, use Cloud only".

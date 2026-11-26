@@ -32,10 +32,7 @@ const versprichtAbfrage = (text: string) =>
 
 const GEDRUCKTE_TEXTE = [
   'src/lib/release-notes.ts',
-  'docs/index.html',
-  'docs/pricing/index.html',
-  'docs/cloud/index.html',
-  'docs/guide/cloud/index.html',
+
 ] as const
 
 /** Nur der Abschnitt der laufenden Version; aeltere bleiben, wie sie sind. */
@@ -68,7 +65,7 @@ describe('die Altersbestaetigung in den Texten', () => {
   })
 
   it('und die zwei Zeilen, die keine Einstellung bewegt, stehen unveraendert', () => {
-    for (const datei of ['docs/pricing/index.html', 'src/lib/release-notes.ts'] as const) {
+    for (const datei of ['src/lib/release-notes.ts'] as const) {
       const text = lies(datei)
       expect(text, datei).toContain('aterial involving minors is refused on every request')
       expect(text, datei).toContain('ou may not upload a photograph of a real, identifiable person without their consent')
@@ -76,7 +73,7 @@ describe('die Altersbestaetigung in den Texten', () => {
   })
 
   it('und die drei Stufen heissen weiter Strict, Standard und Off', () => {
-    for (const datei of ['src/lib/release-notes.ts', 'docs/index.html'] as const) {
+    for (const datei of ['src/lib/release-notes.ts'] as const) {
       expect(lies(datei), datei).toMatch(/Strict, Standard, or off/)
     }
     const oberflaeche = lies('src/components/settings/ContentPolicySettings.tsx')

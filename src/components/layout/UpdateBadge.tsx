@@ -27,6 +27,7 @@ export function UpdateBadge() {
     downloadUpdate,
     installAndRestart,
     dismissUpdate,
+    openReleasePage,
   } = useUpdateStore()
 
   const [open, setOpen] = useState(false)
@@ -276,7 +277,7 @@ export function UpdateBadge() {
                 <>
                   <button
                     onClick={() => {
-                      window.open(`https://github.com/purpledoubled/locally-uncensored/releases/latest`, '_blank')
+                      openReleasePage()
                       setOpen(false)
                     }}
                     className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-[0.65rem] font-medium bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/25 transition-colors"

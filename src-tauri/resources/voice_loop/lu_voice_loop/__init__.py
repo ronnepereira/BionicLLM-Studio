@@ -1,4 +1,4 @@
-"""Voice loop sidecar for Locally Uncensored.
+"""Voice loop sidecar for BionicLLM Studio.
 
 A loopback Pipecat service: speech in, tool-capable LLM, speech out. The app
 owns the microphone, the speaker and every tool. This process never executes

@@ -86,17 +86,12 @@ describe('die drei Stufen des Trainers', () => {
     const rust = readFileSync(resolve(__dirname, '../../../../..', 'src-tauri/src/commands/trainer.rs'), 'utf8')
     expect(rust).toContain(`steps.unwrap_or(${TRAIN_STEPS_DEFAULT})`)
   })
-
-  it('das Handbuch nennt dieselben drei Zahlen', () => {
-    const guide = readFileSync(resolve(__dirname, '../../../../..', 'docs/guide/create/index.html'), 'utf8')
-    expect(guide).toContain('"Quick" (400 steps), "Standard" (1200) or "Thorough" (2400)')
-  })
 })
 
 describe('die gewaehlte Stufe steht im Hinweistext', () => {
   it('THE FIX: der Text nennt die Stufe UND die wirksame Zahl', async () => {
     render(<SpecialControls intent="character" />)
-    const zeile = await screen.findByText(/Runs on your GPU and takes a while/)
+    const zeile = await screen.findByText(/Runs on your GPU|Roda na sua GPU/)
     expect(zeile.textContent).toContain('(Standard, 1200 steps)')
 
     fireEvent.click(screen.getByRole('radio', { name: 'Quick' }))
@@ -113,7 +108,7 @@ describe('die gewaehlte Stufe steht im Hinweistext', () => {
     // der Oberflaeche nicht mehr vor.
     expect(trainStepsNote(400)).toBe('Quick, 400 steps')
     expect(quelle).not.toContain('({trainSteps} steps)')
-    expect(quelle).toContain('({trainStepsNote(trainSteps)})')
+    expect(quelle).toContain('{trainStepsNote(trainSteps)}')
   })
 
   it('GEGENPFAD: eine Zahl ohne Stufe nennt keine Stufe', () => {

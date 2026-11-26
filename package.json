@@ -2,7 +2,7 @@
   "name": "bionicllm-studio",
   "version": "4.0.1",
   "private": false,
-  "description": "BionicLLM Studio: desktop AI studio for chat, agents, local models, images and video. Based on Locally Uncensored.",
+  "description": "BionicLLM Studio: desktop AI studio for chat, agents, local models, images and video.",
   "license": "AGPL-3.0-only",
   "author": "purpledoubled",
   "repository": {

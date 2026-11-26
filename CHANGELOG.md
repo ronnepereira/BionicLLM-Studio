@@ -1,6 +1,11 @@
 # Changelog
 
-All notable changes to Locally Uncensored are documented here.
+## [4.0.1] - 2026-11-26
+
+- Primeiro instalador público do BionicLLM Studio para Windows x64.
+- Aviso automático de atualização com confirmação antes de instalar.
+
+As entradas abaixo documentam versões da base de código anterior à distribuição do BionicLLM Studio.
 
 ## [3.0.8] - 2026-10-27
 
@@ -241,7 +246,7 @@ cloud catalogue.
   rustls-webpki, webpki-root-certs, tokio and others. One accepted exception: the zip
   version inside the updater, which only opens archives whose signature it
   has checked.
-- A new page locallyuncensored.com/security/.
+- A new page on the original project website.
 
 ### Known limits
 
@@ -2591,7 +2596,7 @@ but no such card exists in the house, so the report stays open.
   guessed.** The number carries a label saying where it came from, the context
   picker is available for your own backend, and no guessed budget is sent as a
   maximum answer length any more.
-- **A beginner handbook on locallyuncensored.com:** a hub plus ten chapters,
+- **A beginner handbook on the original site:** a hub plus ten chapters,
   from what it is and installing through chat, agent, code, create, cloud,
   settings and a glossary. Every fact in it comes from the code.
 
@@ -2628,7 +2633,7 @@ but no such card exists in the house, so the report stays open.
 - **Models under 7B carry a plain warning in the catalogue** and are no longer
   offered as a starting pick for chat.
 - **The pricing page lists the credit packs before the plans.**
-- **locallyuncensored.com no longer promises a Mac build**, and two
+- **The original site no longer promises a Mac build**, and two
   documentation pages give the video model count of the current catalogue.
 
 ### Fixed

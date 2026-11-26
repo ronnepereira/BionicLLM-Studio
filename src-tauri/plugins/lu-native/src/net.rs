@@ -365,7 +365,7 @@ mod tests {
 
     #[test]
     fn only_web_mail_and_phone_links_leave_the_app() {
-        for ok in ["https://locallyuncensored.com/pricing", "http://example.org", "mailto:hi@example.com", "tel:+4930123456", "  https://a.b/c?d=e#f  "] {
+        for ok in ["https://example.org/pricing", "http://example.org", "mailto:hi@example.com", "tel:+4930123456", "  https://a.b/c?d=e#f  "] {
             assert!(check_external_url(ok).is_ok(), "{ok}");
         }
         for bad in [

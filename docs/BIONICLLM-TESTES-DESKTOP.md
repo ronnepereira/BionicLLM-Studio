@@ -275,7 +275,7 @@ ExecutÃ¡vel Windows 4.0.0 atualizado em src-tauri/target/debug/BionicLLM Studi
 
 ## Identidade BU e animações — 11/11/2026
 
-Etapa autorizada concluída: referências visuais de LU para BU/BionicLLM Studio em textos de interface, aba e rótulos do mecanismo nativo. Conversão restrita a texto de interface antes da interpolação: nomes de modelos, mensagens históricas, URLs, e-mails, caminhos e identificadores técnicos não são reescritos. Configuração interna LU Engine, IDs lu/lu-cloud e lu-llama-server.exe mantidos. Créditos originais de Locally Uncensored, PurpleDoubleD e AGPL-3.0 preservados em Sobre, junto aos dados de Ronne Pereira já existentes.
+Etapa autorizada concluída: referências visuais de LU para BU/BionicLLM Studio em textos de interface, aba e rótulos do mecanismo nativo. Conversão restrita a texto de interface antes da interpolação: nomes de modelos, mensagens históricas, URLs, e-mails, caminhos e identificadores técnicos não são reescritos. Configuração interna LU Engine, IDs lu/lu-cloud e lu-llama-server.exe mantidos. Créditos originais do projeto de origem, PurpleDoubleD e AGPL-3.0 preservados em Sobre, junto aos dados de Ronne Pereira já existentes.
 
 Geometria do indicador animado alterada para BU, mantendo os 17 estados, hierarquia de peças, motivos, tempos e transições existentes. Monograma estático B com pinos preservado. Galeria confirmou desenho BU em dois tamanhos, animações em execução e movimento reduzido no carregamento. Não houve mudança do motor de animação nem promessa de atualização dinâmica da preferência sem recarregar.
 

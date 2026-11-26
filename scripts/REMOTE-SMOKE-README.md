@@ -15,7 +15,7 @@ the user's phone.
 1. Build & launch the LU desktop exe:
    ```
    npm run tauri:build
-   target\release\locally-uncensored.exe
+   target\release\BionicLLM Studio.exe
    ```
 2. Open Remote drawer (right side) → click **LAN** → click **Dispatch**
    on a chat → pick a folder.

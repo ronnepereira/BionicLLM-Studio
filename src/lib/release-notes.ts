@@ -131,6 +131,20 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: '4.0.1',
+    headline: 'BionicLLM Studio now checks for updates on GitHub.',
+    lines: [
+      {
+        title: 'New versions require your confirmation.',
+        detail: 'When a new version is available, the app displays a notification. The installer starts after you confirm.',
+      },
+      {
+        title: 'Windows x64 installer.',
+        detail: 'GitHub Releases carries the Windows installer, its checksum and the signature used to verify updates.',
+      },
+    ],
+  },
+  {
     version: '4.0.0',
     headline: 'BionicLLM Studio 4.0 brings consistent controls and more reliable conversation continuity.',
     lines: [

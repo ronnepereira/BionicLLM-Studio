@@ -131,11 +131,6 @@ function exportSource(destination) {
     } else copyFileSync(join(ROOT, path), out)
     manifest.push({ path, sha256: createHash('sha256').update(readFileSync(out)).digest('hex') })
   }
-  copyFileSync(join(target, 'README.md'), join(target, 'README.upstream.md'))
-  writeFileSync(join(target, 'README.md'), '# BionicLLM Studio\n\nEstúdio desktop de IA baseado no Locally Uncensored, com licença AGPL-3.0.\n\nCódigo-fonte para Windows, Linux e macOS. Linux e macOS são experimentais e ainda não foram validados em uso real.\n\n## Desenvolvimento\n\nRequer Node.js 22+, Rust e os pré-requisitos do Tauri 2.\n\n```sh\nnpm ci\nnpm run dev\n# Compilar a engine antes de empacotar:\nbash scripts/build-llama.sh\nnpm run tauri:build\n```\n\nConsulte [publicação e atualizações](docs/PUBLICACAO-GITHUB.md), [licença](LICENSE), [créditos originais](README.upstream.md) e os avisos em third-party/.\n\nInstaladores são distribuídos em Releases, separados do código. Nenhuma conversa, credencial, configuração pessoal ou modelo baixado deve ser enviado ao repositório.\n')
-  audit(files, target)
-  for (const entry of manifest) entry.sha256 = createHash('sha256').update(readFileSync(join(target, entry.path))).digest('hex')
-  manifest.push({ path: 'README.upstream.md', sha256: createHash('sha256').update(readFileSync(join(target, 'README.upstream.md'))).digest('hex') })
   writeJson(join(target, 'SOURCE-MANIFEST.json'), { generatedAt: new Date().toISOString(), files: manifest })
   console.log(`Clean source exported: ${target} (${files.length} files). No Git history, dependencies, installers or local .env copied.`)
 }

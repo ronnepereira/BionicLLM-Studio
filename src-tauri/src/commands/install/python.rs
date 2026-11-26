@@ -322,7 +322,7 @@ pub fn install_python(state: State<'_, AppState>) -> Result<serde_json::Value, S
                 update(
                     "error",
                     "winget reported success but Python is still not on PATH. \
-                     Restart Locally Uncensored — sometimes Windows needs the new PATH \
+                     Restart BionicLLM Studio — sometimes Windows needs the new PATH \
                      to take effect. If it still doesn't show up, install manually \
                      from python.org with 'Add Python to PATH' on.",
                 );

@@ -47,7 +47,7 @@ def emit(event: str, **fields) -> None:
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(prog="lu_voice_loop", description="Locally Uncensored voice loop sidecar")
+    parser = argparse.ArgumentParser(prog="lu_voice_loop", description="BionicLLM Studio voice loop sidecar")
     parser.add_argument("--port", type=int, required=True, help="loopback port, 0 picks a free one")
     parser.add_argument("--models-dir", type=Path, required=True, help="directory the voice models were installed to")
     parser.add_argument("--verify-models", action="store_true", help="check every model checksum, then exit")

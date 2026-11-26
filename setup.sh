@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Locally Uncensored — Developer Setup (Linux/macOS)
+# BionicLLM Studio — Developer Setup (Linux/macOS)
 # Runs LU in dev-mode (Vite at localhost:5173). For the installed
 # desktop experience, build with `npm run tauri:build` or grab the
 # AppImage/deb/rpm from Releases once a build is posted for your OS.
@@ -16,18 +16,18 @@ NC='\033[0m'
 
 echo ""
 echo -e "${YELLOW}   +---------------------------------------------------------------+${NC}"
-echo -e "${YELLOW}   | This script starts Locally Uncensored in DEVELOPER mode.     |${NC}"
+echo -e "${YELLOW}   | This script starts BionicLLM Studio in DEVELOPER mode.     |${NC}"
 echo -e "${YELLOW}   | It runs via Vite at http://localhost:5173 in your browser,   |${NC}"
 echo -e "${YELLOW}   | which has fewer features than a standalone desktop build.    |${NC}"
 echo -e "${YELLOW}   |                                                               |${NC}"
 echo -e "${YELLOW}   | Just want to USE the app? Download the installer instead:    |${NC}"
-echo -e "${CYAN}   | https://github.com/PurpleDoubleD/locally-uncensored/releases |${NC}"
+echo -e "${CYAN}   | https://github.com/ronnepereira/BionicLLM-Studio/releases |${NC}"
 echo -e "${YELLOW}   +---------------------------------------------------------------+${NC}"
 echo ""
 read -p "Continue with developer setup? (y/N) " answer
 case "$answer" in
   [Yy]*) echo "" ;;
-  *) echo -e "Cancelled. Download the installer from:\n  ${CYAN}https://github.com/PurpleDoubleD/locally-uncensored/releases/latest${NC}"; exit 0 ;;
+  *) echo -e "Cancelled. Download the installer from:\n  ${CYAN}https://github.com/ronnepereira/BionicLLM-Studio/releases/latest${NC}"; exit 0 ;;
 esac
 
 echo -e "${PURPLE}"
