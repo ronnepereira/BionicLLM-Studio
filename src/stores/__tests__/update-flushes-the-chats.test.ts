@@ -59,6 +59,7 @@ import { useUpdateStore } from '../updateStore'
 
 async function armPendingUpdate() {
   await useUpdateStore.getState().checkForUpdate(true)
+  await useUpdateStore.getState().downloadUpdate()
 }
 
 describe('an update puts the chats on disk before it hands the process over', () => {

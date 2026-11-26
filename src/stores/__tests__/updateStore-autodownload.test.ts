@@ -27,7 +27,7 @@ const updater = vi.hoisted(() => ({
 
 vi.mock('@tauri-apps/plugin-updater', () => ({ check: updater.check }))
 
-import { useUpdateStore } from '../updateStore'
+import { resetUpdateSession, useUpdateStore } from '../updateStore'
 
 /** An Update handle that reports a complete download when asked. */
 function fakeUpdate(version: string) {
@@ -68,6 +68,7 @@ function reset(over: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
+  resetUpdateSession()
   updater.check.mockReset()
   updater.downloads = 0
   reset()
@@ -113,6 +114,33 @@ describe('an update fetches itself', () => {
 })
 
 describe('the 6h re-check does not re-download', () => {
+  it('keeps the same native handle and waits for the verified download after Finished', async () => {
+    reset({ autoDownload: false })
+    const first = fakeUpdate('2.1.0')
+    const checkedAgain = { ...fakeUpdate('2.1.0'), close: vi.fn(async () => {}) }
+    let completeDownload!: () => void
+    first.download.mockImplementationOnce(async cb => {
+      cb({ event: 'Finished' })
+      await new Promise<void>(resolve => { completeDownload = resolve })
+    })
+    updater.check.mockResolvedValueOnce(first).mockResolvedValueOnce(checkedAgain)
+    await useUpdateStore.getState().checkForUpdate(true)
+    const downloading = useUpdateStore.getState().downloadUpdate()
+    await vi.waitFor(() => expect(first.download).toHaveBeenCalledTimes(1))
+    await useUpdateStore.getState().downloadUpdate()
+    expect(first.download).toHaveBeenCalledTimes(1)
+    expect(useUpdateStore.getState().downloadStatus).toBe('downloading')
+    await useUpdateStore.getState().installAndRestart()
+    expect(first.install).not.toHaveBeenCalled()
+    expect(useUpdateStore.getState().downloadStatus).toBe('downloading')
+    completeDownload()
+    await downloading
+    expect(useUpdateStore.getState().downloadStatus).toBe('downloaded')
+
+    await useUpdateStore.getState().checkForUpdate(true)
+    expect(checkedAgain.close).toHaveBeenCalledOnce()
+    expect(useUpdateStore.getState().downloadStatus).toBe('downloaded')
+  })
   it('leaves a finished download alone', async () => {
     updater.check.mockResolvedValue(fakeUpdate('2.1.0'))
     await useUpdateStore.getState().checkForUpdate()

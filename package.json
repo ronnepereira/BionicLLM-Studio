@@ -1,6 +1,6 @@
 {
   "name": "bionicllm-studio",
-  "version": "4.0.3",
+  "version": "4.0.4",
   "private": false,
   "description": "BionicLLM Studio: desktop AI studio for chat, agents, local models, images and video.",
   "license": "AGPL-3.0-only",

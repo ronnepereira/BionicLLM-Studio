@@ -1,6 +1,6 @@
 [package]
 name = "locally-uncensored"
-version = "4.0.3"
+version = "4.0.4"
 description = "Private, local AI chat & image/video generation"
 authors = ["purpledoubled"]
 edition = "2021"

@@ -16,6 +16,8 @@ Output (one JSON per line on stdout):
 import sys
 import json
 import os
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 
 def error_text(e: BaseException) -> str:
@@ -119,6 +121,48 @@ def transcribe_file(model, path: str):
     return " ".join([s.text for s in segments]).strip(), info.language
 
 
+def load_base_model():
+    from faster_whisper import WhisperModel
+    from faster_whisper.utils import download_model
+    from huggingface_hub import hf_hub_download
+    from huggingface_hub.utils import LocalEntryNotFoundError
+
+    try:
+        folder = Path(download_model("base", local_files_only=True))
+    except LocalEntryNotFoundError:
+        folder = Path(download_model("base"))
+
+    # A snapshot can exist even when a cached blob is empty or a link points
+    # to a missing blob. A normal Hub download treats that file as cached.
+    for filename in ("model.bin", "config.json"):
+        try:
+            if (folder / filename).stat().st_size > 0:
+                continue
+        except FileNotFoundError:
+            pass
+        print(f"Repairing faster-whisper cache: {filename}", file=sys.stderr, flush=True)
+        try:
+            # Download beside the snapshot. Some Hub versions keep a broken
+            # pointer even after forcing a download into the shared cache.
+            with TemporaryDirectory(prefix=".bionic-repair-", dir=folder) as staging:
+                repaired = Path(hf_hub_download(
+                    "Systran/faster-whisper-base",
+                    filename,
+                    revision=folder.name,
+                    local_dir=staging,
+                    force_download=True,
+                    token=False,
+                ))
+                if repaired.stat().st_size == 0:
+                    raise ValueError("Empty model file after download")
+                os.replace(repaired, folder / filename)
+        except Exception as e:
+            print(f"Whisper cache repair failed: {type(e).__name__}", file=sys.stderr, flush=True)
+            raise RuntimeError("O arquivo do modelo Whisper está incompleto. Conecte-se à internet e tente transcrever novamente para reparar o download.") from e
+
+    return WhisperModel(str(folder), device="cpu", compute_type="int8")
+
+
 def main():
     # Unbuffered stdout for real-time communication with Node.js
     sys.stdout.reconfigure(line_buffering=True)
@@ -128,7 +172,7 @@ def main():
 
     try:
         import av
-        from faster_whisper import WhisperModel
+        import faster_whisper
     except ImportError:
         respond({"status": "error", "error": "faster-whisper not installed"})
         sys.exit(1)
@@ -136,7 +180,7 @@ def main():
 
     # Load model once — this is the slow part (~170s on some systems)
     try:
-        model = WhisperModel("base", device="cpu", compute_type="int8")
+        model = load_base_model()
         print("Model loaded, ready for transcription.", file=sys.stderr, flush=True)
     except Exception as e:
         respond({"status": "error", "error": f"Model load failed: {error_text(e)}"})

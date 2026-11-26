@@ -75,6 +75,7 @@ function neverSettles(): Promise<void> {
 
 async function armPendingUpdate() {
   await useUpdateStore.getState().checkForUpdate(true)
+  await useUpdateStore.getState().downloadUpdate()
 }
 
 function reset() {

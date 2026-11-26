@@ -81,6 +81,7 @@ describe('Restart Now brings the app back', () => {
 
   it('asks for the restart once the plugin has put the new files in place', async () => {
     await useUpdateStore.getState().checkForUpdate(true)
+    await useUpdateStore.getState().downloadUpdate()
     calls.length = 0
 
     await useUpdateStore.getState().installAndRestart()
@@ -99,6 +100,7 @@ describe('Restart Now brings the app back', () => {
     // than the old behaviour.
     backend.rejects.add('restart_after_update')
     await useUpdateStore.getState().checkForUpdate(true)
+    await useUpdateStore.getState().downloadUpdate()
     calls.length = 0
 
     await useUpdateStore.getState().installAndRestart()
@@ -111,6 +113,7 @@ describe('Restart Now brings the app back', () => {
   it('never restarts after an install that failed', async () => {
     install.mockRejectedValueOnce(new Error('pkexec was dismissed'))
     await useUpdateStore.getState().checkForUpdate(true)
+    await useUpdateStore.getState().downloadUpdate()
     calls.length = 0
 
     await useUpdateStore.getState().installAndRestart()

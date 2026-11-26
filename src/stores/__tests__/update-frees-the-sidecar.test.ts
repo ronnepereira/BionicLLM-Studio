@@ -61,6 +61,7 @@ import { useUpdateStore } from '../updateStore'
 async function armPendingUpdate() {
   // The Update handle only exists after a successful check.
   await useUpdateStore.getState().checkForUpdate(true)
+  await useUpdateStore.getState().downloadUpdate()
 }
 
 describe('installing an update frees our own engine first', () => {

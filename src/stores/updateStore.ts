@@ -202,6 +202,12 @@ const STARTUP_STALE = 15 * 60 * 1000 // 15 minutes
 // ── Non-serializable update object (module-level) ─────────────
 
 let _pendingUpdate: Update | null = null
+let _updateCheck: Promise<void> | null = null
+let _downloadInFlight = false
+
+function releaseUpdate(update: Update | null) {
+  void update?.close?.().catch(() => {})
+}
 
 /** The version LU downloaded for its own install, and the sign that the
  *  staged AppImage from `self_migrate_stage` is still lying next to the app.
@@ -218,6 +224,9 @@ let _methodProbe: Promise<InstallMethod | null> | null = null
 /** Test seam: forget everything that only lives in this process, which is the
  *  cached probe and the AppImage staged for LU's own install. */
 export function resetUpdateSession() {
+  _pendingUpdate = null
+  _updateCheck = null
+  _downloadInFlight = false
   _methodProbe = null
   _stagedSelfInstall = null
 }
@@ -294,178 +303,217 @@ export const useUpdateStore = create<UpdateState>()(
         return method
       },
 
-      checkForUpdate: async (force = false) => {
+      checkForUpdate: (force = false) => {
         // A private preparation repository cannot serve public updates.
         // Never embed a GitHub access token in the distributed application.
-        if (!publication.updatesEnabled) return
+        if (!publication.updatesEnabled) return Promise.resolve()
+        if (_updateCheck) return _updateCheck
         const state = get()
-        if (state.isChecking) return
-        if (!force && state.lastChecked && Date.now() - state.lastChecked < CHECK_INTERVAL) return
+        if (state.isChecking || state.downloadStatus === 'downloading' || state.downloadStatus === 'installing') return Promise.resolve()
+        if (!force && state.lastChecked && Date.now() - state.lastChecked < CHECK_INTERVAL) return Promise.resolve()
 
         set({ isChecking: true })
 
-        try {
-          if (isTauri()) {
-            // Production: use Tauri updater plugin
-            const { check } = await import('@tauri-apps/plugin-updater')
-            const update = await check()
+        _updateCheck = (async () => {
+          try {
+            if (isTauri()) {
+              // Production: use Tauri updater plugin
+              const { check } = await import('@tauri-apps/plugin-updater')
+              const update = await check()
+              const { downloadStatus, latestVersion } = get()
+              if (downloadStatus === 'downloading' || downloadStatus === 'installing') {
+                if (update !== _pendingUpdate) releaseUpdate(update)
+                set({ isChecking: false })
+                return
+              }
 
-            if (update) {
-              _pendingUpdate = update
-              // This check repeats every 6h for as long as the user stays on the
-              // old build. Resetting the download state unconditionally would
-              // throw away a finished download and, with autoDownload on, pull
-              // the same 100 MB again on every tick. Only a DIFFERENT version
-              // invalidates what we already have.
-              const isNewTarget = get().latestVersion !== update.version
-              set({
-                updateAvailable: true,
-                latestVersion: update.version,
-                releaseNotes: update.body ? truncateNotes(update.body) : null,
-                isChecking: false,
-                lastChecked: Date.now(),
-                lastCheckFailed: false,
-                noBuildForPlatform: false,
-                ...(isNewTarget
-                  ? {
-                      downloadStatus: 'idle' as DownloadStatus,
-                      downloadProgress: 0,
-                      downloadedBytes: 0,
-                      totalBytes: 0,
-                      errorMessage: null,
-                      progressNote: null,
-                    }
-                  : {}),
-              })
+              if (update) {
+                // The staged bytes belong to one Update object, not its version.
+                if (downloadStatus === 'downloaded' && latestVersion === update.version && _pendingUpdate) {
+                  if (update !== _pendingUpdate) releaseUpdate(update)
+                } else {
+                  if (update !== _pendingUpdate) releaseUpdate(_pendingUpdate)
+                  _pendingUpdate = update
+                }
+                // This check repeats every 6h for as long as the user stays on the
+                // old build. Resetting the download state unconditionally would
+                // throw away a finished download and, with autoDownload on, pull
+                // the same 100 MB again on every tick. Only a DIFFERENT version
+                // invalidates what we already have.
+                const isNewTarget = get().latestVersion !== update.version
+                set({
+                  updateAvailable: true,
+                  latestVersion: update.version,
+                  releaseNotes: update.body ? truncateNotes(update.body) : null,
+                  isChecking: false,
+                  lastChecked: Date.now(),
+                  lastCheckFailed: false,
+                  noBuildForPlatform: false,
+                  ...(isNewTarget
+                    ? {
+                        downloadStatus: 'idle' as DownloadStatus,
+                        downloadProgress: 0,
+                        downloadedBytes: 0,
+                        totalBytes: 0,
+                        errorMessage: null,
+                        progressNote: null,
+                      }
+                    : {}),
+                })
 
-              // Fetch it now rather than waiting for a click. Sign-ups in the
-              // app were still arriving from 2.5.5 and 2.5.6 builds weeks after
-              // 2.5.7 shipped: people were not refusing the update, they were
-              // never getting far enough to start it. Not awaited — the check
-              // must not block on a 100 MB download. Only from 'idle', so a
-              // finished, running or failed download is never restarted behind
-              // the user's back.
-              if (get().autoDownload && get().downloadStatus === 'idle') {
-                void get().downloadUpdate()
+                // Fetch it now rather than waiting for a click. Sign-ups in the
+                // app were still arriving from 2.5.5 and 2.5.6 builds weeks after
+                // 2.5.7 shipped: people were not refusing the update, they were
+                // never getting far enough to start it. Not awaited — the check
+                // must not block on a 100 MB download. Only from 'idle', so a
+                // finished, running or failed download is never restarted behind
+                // the user's back.
+                if (get().autoDownload && get().downloadStatus === 'idle') {
+                  void get().downloadUpdate()
+                }
+              } else {
+                releaseUpdate(_pendingUpdate)
+                _pendingUpdate = null
+                _stagedSelfInstall = null
+                // Nothing on offer, so nothing may be left standing either. Only
+                // clearing the flag kept the last known version in the store, and
+                // the Updates section shows that row whenever it is newer than the
+                // running build: "Latest Version v2.9.9" right next to the green
+                // "You are on the latest version.". A withdrawn release is the
+                // real path there, and it leaves people hunting for an update
+                // that no longer exists.
+                set({
+                  isChecking: false,
+                  lastChecked: Date.now(),
+                  lastCheckFailed: false,
+                  noBuildForPlatform: false,
+                  updateAvailable: false,
+                  latestVersion: null,
+                  releaseNotes: null,
+                  downloadStatus: 'idle',
+                  downloadProgress: 0,
+                })
               }
             } else {
-              // Nothing on offer, so nothing may be left standing either. Only
-              // clearing the flag kept the last known version in the store, and
-              // the Updates section shows that row whenever it is newer than the
-              // running build: "Latest Version v2.9.9" right next to the green
-              // "You are on the latest version.". A withdrawn release is the
-              // real path there, and it leaves people hunting for an update
-              // that no longer exists.
+              // Dev mode: check GitHub releases API (no install capability)
+              const res = await fetch(
+                GITHUB_REPO ? `https://api.github.com/repos/${GITHUB_REPO}/releases/latest` : 'https://updates-not-configured.invalid/latest.json',
+                { headers: { 'Accept': 'application/vnd.github.v3+json' } }
+              )
+              if (!res.ok) {
+                set({ isChecking: false, lastCheckFailed: true })
+                return
+              }
+              const data = await res.json()
+              const latestVersion = (data.tag_name as string).replace(/^v/, '')
+              const updateAvailable = isNewerVersion(latestVersion, currentVersion)
+
+              set({
+                latestVersion,
+                updateAvailable,
+                releaseNotes: data.body ? truncateNotes(data.body) : null,
+                isChecking: false,
+                lastChecked: Date.now(),
+                lastCheckFailed: false,
+              })
+            }
+          } catch (e) {
+            // A release without a Mac build is not a broken connection: the
+            // server answered, it just has nothing for this machine. That is
+            // the state of every Mac install until the first Mac release is
+            // out, and again after any release whose Mac job was skipped.
+            // Windows and Linux keep the old answer word for word.
+            if (releaseHasNoBuildForThisPlatform(e) && isMacOS()) {
+              if (get().downloadStatus === 'downloading' || get().downloadStatus === 'installing') {
+                set({ isChecking: false })
+                return
+              }
+              releaseUpdate(_pendingUpdate)
+              _pendingUpdate = null
               set({
                 isChecking: false,
                 lastChecked: Date.now(),
                 lastCheckFailed: false,
-                noBuildForPlatform: false,
+                noBuildForPlatform: true,
                 updateAvailable: false,
                 latestVersion: null,
                 releaseNotes: null,
+                downloadStatus: 'idle',
+                downloadProgress: 0,
               })
-            }
-          } else {
-            // Dev mode: check GitHub releases API (no install capability)
-            const res = await fetch(
-              GITHUB_REPO ? `https://api.github.com/repos/${GITHUB_REPO}/releases/latest` : 'https://updates-not-configured.invalid/latest.json',
-              { headers: { 'Accept': 'application/vnd.github.v3+json' } }
-            )
-            if (!res.ok) {
-              set({ isChecking: false, lastCheckFailed: true })
               return
             }
-            const data = await res.json()
-            const latestVersion = (data.tag_name as string).replace(/^v/, '')
-            const updateAvailable = isNewerVersion(latestVersion, currentVersion)
-
-            set({
-              latestVersion,
-              updateAvailable,
-              releaseNotes: data.body ? truncateNotes(data.body) : null,
-              isChecking: false,
-              lastChecked: Date.now(),
-              lastCheckFailed: false,
-            })
+            set({ isChecking: false, lastCheckFailed: true, noBuildForPlatform: false })
           }
-        } catch (e) {
-          // A release without a Mac build is not a broken connection: the
-          // server answered, it just has nothing for this machine. That is
-          // the state of every Mac install until the first Mac release is
-          // out, and again after any release whose Mac job was skipped.
-          // Windows and Linux keep the old answer word for word.
-          if (releaseHasNoBuildForThisPlatform(e) && isMacOS()) {
-            _pendingUpdate = null
-            set({
-              isChecking: false,
-              lastChecked: Date.now(),
-              lastCheckFailed: false,
-              noBuildForPlatform: true,
-              updateAvailable: false,
-              latestVersion: null,
-              releaseNotes: null,
-            })
-            return
-          }
-          set({ isChecking: false, lastCheckFailed: true, noBuildForPlatform: false })
-        }
+        })().finally(() => { _updateCheck = null })
+        return _updateCheck
       },
 
       downloadUpdate: async () => {
         if (!publication.updatesEnabled) return
-        // Where the plugin cannot deliver, LU fetches its own AppImage
-        // instead. Same button, same progress bar, and nothing on screen says
-        // which of the two lanes ran.
-        if (installsItself(await get().refreshInstallMethod())) {
-          await downloadOwnInstall(set)
-          return
-        }
-
-        // The Update handle lives in this process only. `updateAvailable` is
-        // persisted, so after a relaunch — or when the startup check has not
-        // landed yet, or ran while offline — the badge offers a Download button
-        // with nothing behind it. This used to `return` silently: the user
-        // clicked and NOTHING happened, no spinner, no error. Re-check first
-        // (forced, or the 6h cooldown a failed check just armed would block
-        // it), and if the handle still is not there, say so.
-        if (!_pendingUpdate) {
-          await get().checkForUpdate(true)
-        }
-        if (!_pendingUpdate) {
-          set({
-            downloadStatus: 'error',
-            errorMessage: 'Could not reach the update server. Check your connection and try again.',
-          })
-          return
-        }
-
-        set({ downloadStatus: 'downloading', downloadProgress: 0, downloadedBytes: 0, errorMessage: null })
-        let downloaded = 0
-
+        const status = get().downloadStatus
+        if (_downloadInFlight || status === 'downloading' || status === 'downloaded' || status === 'installing') return
+        _downloadInFlight = true
         try {
-          await _pendingUpdate.download((event) => {
-            switch (event.event) {
-              case 'Started':
-                set({ totalBytes: event.data.contentLength ?? 0 })
-                break
-              case 'Progress': {
-                downloaded += event.data.chunkLength
-                const total = get().totalBytes
-                const progress = total > 0 ? Math.round((downloaded / total) * 100) : 0
-                set({ downloadedBytes: downloaded, downloadProgress: progress })
-                break
+          // Where the plugin cannot deliver, LU fetches its own AppImage
+          // instead. Same button, same progress bar, and nothing on screen says
+          // which of the two lanes ran.
+          if (installsItself(await get().refreshInstallMethod())) {
+            await downloadOwnInstall(set)
+            return
+          }
+
+          // The Update handle lives in this process only. `updateAvailable` is
+          // persisted, so after a relaunch — or when the startup check has not
+          // landed yet, or ran while offline — the badge offers a Download button
+          // with nothing behind it. This used to `return` silently: the user
+          // clicked and NOTHING happened, no spinner, no error. Re-check first
+          // (forced, or the 6h cooldown a failed check just armed would block
+          // it), and if the handle still is not there, say so.
+          if (!_pendingUpdate) {
+            await get().checkForUpdate(true)
+          }
+          const handle = _pendingUpdate
+          if (!handle) {
+            set({
+              downloadStatus: 'error',
+              errorMessage: 'Could not reach the update server. Check your connection and try again.',
+            })
+            return
+          }
+
+          set({ downloadStatus: 'downloading', downloadProgress: 0, downloadedBytes: 0, errorMessage: null })
+          let downloaded = 0
+
+          try {
+            await handle.download((event) => {
+              switch (event.event) {
+                case 'Started':
+                  set({ totalBytes: event.data.contentLength ?? 0 })
+                  break
+                case 'Progress': {
+                  downloaded += event.data.chunkLength
+                  const total = get().totalBytes
+                  const progress = total > 0 ? Math.round((downloaded / total) * 100) : 0
+                  set({ downloadedBytes: downloaded, downloadProgress: progress })
+                  break
+                }
+                case 'Finished':
+                  set({ downloadProgress: 100 })
+                  break
               }
-              case 'Finished':
-                set({ downloadStatus: 'downloaded', downloadProgress: 100 })
-                break
-            }
-          })
-        } catch (e) {
-          set({
-            downloadStatus: 'error',
-            errorMessage: withDetail('The update could not be downloaded.', e),
-          })
+            })
+            // Finished is a transfer event. The plugin registers the verified
+            // bytes on this handle only when the download promise resolves.
+            set({ downloadStatus: 'downloaded', downloadProgress: 100 })
+          } catch (e) {
+            set({
+              downloadStatus: 'error',
+              errorMessage: withDetail('The update could not be downloaded.', e),
+            })
+          }
+        } finally {
+          _downloadInFlight = false
         }
       },
 
@@ -476,8 +524,10 @@ export const useUpdateStore = create<UpdateState>()(
         // install, this one included, so asking it instead would send an Arch
         // box back into `pkexec dpkg -i` the moment our own download failed.
         const ownInstall = installsItself(await get().refreshInstallMethod())
+        const { downloadStatus } = get()
+        if (_downloadInFlight || downloadStatus === 'downloading' || downloadStatus === 'installing') return
         const handle = _pendingUpdate
-        if (ownInstall ? _stagedSelfInstall === null : !handle) {
+        if (downloadStatus !== 'downloaded' || (ownInstall ? _stagedSelfInstall === null : !handle)) {
           // Nothing was downloaded in THIS process, same dead-button problem
           // as in downloadUpdate, and here a re-check would not help.
           set({
