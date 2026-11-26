@@ -1,9 +1,10 @@
 import { useUiText } from "../../lib/ui-text"
-import { useState, useRef, useEffect, useLayoutEffect, useCallback, type ReactNode } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, lazy, Suspense, type ReactNode } from 'react'
 import { usePopoverPlatz } from '../../hooks/usePopoverPlatz'
 import { SamplingControls } from './SamplingControls'
 import { ReasoningEffortPicker } from './ReasoningEffortPicker'
-import { Send, Square, Paperclip, X, Brain, Gauge, Terminal, Film, Music } from 'lucide-react'
+import { Send, ListPlus, Square, Paperclip, X, Brain, Gauge, Terminal, Film, Music, Smile } from 'lucide-react'
+const EmojiPicker = lazy(() => import('./EmojiPicker'))
 import { matchAgentCommands, type AgentCommand, type CommandScope } from '../../lib/agent-commands'
 import { VoiceButton, type VoiceButtonHandle } from './VoiceButton'
 import { ApprovalDialog } from './ApprovalDialog'
@@ -15,6 +16,8 @@ import { useSettingsStore } from '../../stores/settingsStore'
 import { useUIStore } from '../../stores/uiStore'
 import { useModelStore } from '../../stores/modelStore'
 import { useChatStore } from '../../stores/chatStore'
+import { useComposerQueueStore, type ComposerQueueTarget } from '../../stores/composerQueueStore'
+import { useGenerationStore } from '../../stores/generationStore'
 import { isThinkingCompatible, isVisionCompatible, declaredVision } from '../../lib/model-compatibility'
 import { clampEffort, effortChoices, isEffortLevel, DEFAULT_EFFORT } from '../../lib/effort'
 import type { AgentToolCall } from '../../types/agent-mode'
@@ -40,7 +43,8 @@ import {
 } from '../../lib/create/chat-attachments'
 
 interface Props {
-  onSend: (content: string, images?: ImageAttachment[], files?: ChatFileInput[], media?: PendingMedia[]) => void
+  onSend: (content: string, images?: ImageAttachment[], files?: ChatFileInput[], media?: PendingMedia[], target?: ComposerQueueTarget) => void | Promise<void>
+  enableMessageQueue?: boolean
   onStop: () => void
   /** THIS conversation is answering: the slot shows Stop. */
   isGenerating: boolean
@@ -145,7 +149,7 @@ interface SendLock {
   message: string
 }
 
-export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, pendingApproval, onApprove, onApproveAll, onReject, disabled, modelReady, slashCommands, composerModel, composerActions, composerAbove, filesReachTools = false, draftScope = 'chat' }: Props) {
+export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, pendingApproval, onApprove, onApproveAll, onReject, disabled, modelReady, slashCommands, composerModel, composerActions, composerAbove, filesReachTools = false, draftScope = 'chat', enableMessageQueue = false }: Props) {
   const uiText = useUiText()
 
   // What this composer held when its view closed last (lib/chat-drafts.ts):
@@ -283,6 +287,7 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
     setCmdMenu([])
   }
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   // Text already in the box when dictation started. Interim + final transcripts
   // are written as base + transcript, so streaming chunks REPLACE (not stack)
@@ -298,8 +303,15 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
   const caretRef = useRef<number | null>(null)
   // Cloud mode is a money state: the next Send is billed. It gets drawn here,
   // where the user is typing, not only on the switch in the header corner.
-  const cloudMode = useSettingsStore((s) => s.settings.appMode) === 'cloud'
+  const appMode = useSettingsStore((s) => s.settings.appMode)
+  const cloudMode = appMode === 'cloud'
   const activeModel = useModelStore((s) => s.activeModel)
+  const queuedMessages = useComposerQueueStore((s) => enableMessageQueue && conversationId ? s.messages[conversationId] : undefined)
+  const sendingMessage = useComposerQueueStore((s) => enableMessageQueue && conversationId ? s.sending[conversationId] : undefined)
+  const bookedRun = useGenerationStore((s) => !!(enableMessageQueue && conversationId && s.runs[conversationId]))
+  const answerInProgress = isGenerating || !!waitingForLocalLane || bookedRun || !!sendingMessage
+  const willQueue = !!(enableMessageQueue && conversationId && (answerInProgress || queuedMessages?.length))
+
   const activeModelMeta = useModelStore((s) => s.models.find((m) => m.name === s.activeModel))
   // Server-declared capability (LU Cloud carries thinkMode from /models) wins
   // over the local name-heuristic; 'always' renders the toggle locked on.
@@ -568,7 +580,7 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
   const handleSend = () => {
     // Enter ends the last word as a space would, so an emoticon there turns.
     const trimmed = (emojiOn ? turnOnSend(input) : input).trim()
-    if (imageJob.current.busy || fileJob.current.busy || (!trimmed && images.length === 0 && files.length === 0 && media.length === 0) || isGenerating || waitingForLocalLane || disabled) return
+    if (imageJob.current.busy || fileJob.current.busy || (!trimmed && images.length === 0 && files.length === 0 && media.length === 0) || (answerInProgress && !willQueue) || disabled) return
     // No chat model to answer: the send handlers return without a word in that
     // case, and the lines below would then empty the field and the chips for a
     // message that went nowhere (found in the Windows build of 3.0.5). The
@@ -588,9 +600,29 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
     // The third argument only exists for a message that carries files, so a
     // send without them reaches its handler exactly as it always did.
     // And the fourth only for one that carries a clip or a sound track.
-    if (media.length > 0) onSend(trimmed || '(attachment)', pictures, files.length > 0 ? files : undefined, media)
-    else if (files.length > 0) onSend(text, pictures, files)
-    else onSend(text, pictures)
+    const send = (target?: ComposerQueueTarget) => {
+      if (target) return onSend(media.length ? trimmed || '(attachment)' : text, pictures,
+        files.length ? files : undefined, media.length ? media : undefined, target)
+      if (media.length > 0) return onSend(trimmed || '(attachment)', pictures, files.length > 0 ? files : undefined, media)
+      if (files.length > 0) return onSend(text, pictures, files)
+      return onSend(text, pictures)
+    }
+    const queue = useComposerQueueStore.getState()
+    const id = useChatStore.getState().activeConversationId
+    const model = useModelStore.getState().activeModel
+    if (enableMessageQueue && id && model && (willQueue || queue.sending[id] || queue.messages[id]?.length
+      || useGenerationStore.getState().runs[id])) {
+      const target = { conversationId: id, model }
+      queue.enqueue(target, trimmed || files.map(file => file.attachment.name).join(', ') || uiText("Attachments"), () => send(target))
+    } else if (enableMessageQueue) {
+      const result = send()
+      const target = id ?? useChatStore.getState().activeConversationId
+      const onError = (error?: unknown) => console.error('Composer send failed', error)
+      if (target) queue.track(target, result, onError)
+      else void Promise.resolve(result).catch(onError)
+    } else {
+      void send()
+    }
     // Sent while dictating: the words in the field went out, the take ends
     // here and leaves nothing to fill the emptied field again.
     if (isVoiceRecording) voiceRef.current?.endOnSend()
@@ -714,6 +746,23 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
 
   return (
     <div className={`px-3 pb-2 pt-1 w-full ${COMPOSER_MAX_W} mx-auto`}>
+      {conversationId && !!queuedMessages?.length && (
+        <section className="mb-2 rounded-md border border-gray-200 px-2 py-1.5 text-xs text-gray-600 dark:border-white/10 dark:text-gray-300" aria-label={uiText("Queued messages")}>
+          <div className="flex items-center gap-1.5" role="status"><ListPlus size={14} />{uiText("Queued messages")} ({queuedMessages.length})</div>
+          <ol className="max-h-28 overflow-y-auto">
+            {queuedMessages.map(message => (
+              <li key={message.id} className="flex min-w-0 items-center gap-2 py-0.5">
+                <span className="min-w-0 flex-1 truncate" title={message.preview}>{message.preview}</span>
+                {message.failed && <button type="button" className="shrink-0 text-red-600 dark:text-red-400 hover:underline" onClick={() => useComposerQueueStore.getState().retry(conversationId, message.id)}>{uiText("Retry send")}</button>}
+                {sendingMessage !== message.id && (
+                  <button type="button" className="shrink-0 rounded p-1 hover:bg-gray-200 dark:hover:bg-white/10" aria-label={uiText("Remove queued message")} title={uiText("Remove queued message")} onClick={() => useComposerQueueStore.getState().remove(conversationId, message.id)}><X size={12} /></button>
+                )}
+                {sendingMessage === message.id && <span className="shrink-0">{uiText("In progress")}</span>}
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
       {/* 19.09.2026, Runde 2 (Nachtrag): ueber dem Eingabefeld steht
           seither GAR KEINE Marke mehr, weder "No credits" noch "No Filter".
           Die Komponente, die sie hier zeigte, ist geloescht, nicht nur
@@ -894,8 +943,9 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
             onPaste={handlePaste}
             placeholder={disabled ? uiText("Unavailable") : isDragOver ? uiText("Drop files here...") : isTranscribing ? uiText("Transcribing...") : isVoiceRecording ? uiText("Recording...") : "Envie mensagem ou execute uma tarefa, / comandos, @ arquivos ou sessões."}
             disabled={disabled}
-            rows={1}
-            className="lu-fokus-am-kasten w-full bg-transparent resize-none text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-600 focus:outline-none text-[12px] leading-relaxed max-h-[200px] disabled:opacity-50 scrollbar-thin"
+            rows={2}
+            style={{ fontSize: 'var(--chat-font-size, 14px)', minHeight: '3.3em' }}
+            className="lu-fokus-am-kasten w-full bg-transparent resize-none text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-600 focus:outline-none leading-relaxed max-h-[200px] disabled:opacity-50 scrollbar-thin"
           />
         </div>
 
@@ -918,7 +968,7 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
           {/* Clip button */}
           <button
             onClick={() => fileInputRef.current?.click()}
-            disabled={isGenerating || preparingImages || preparingFiles}
+            disabled={disabled || (isGenerating && !enableMessageQueue) || preparingImages || preparingFiles}
             className="lu-control lu-control--icon"
             title={createOn ? uiText("Attach images, clips, audio or files") : uiText("Attach images or files")}
           >
@@ -933,6 +983,17 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
             onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = '' }}
           />
 
+          <div className="relative shrink-0">
+            <button type="button" className="lu-control lu-control--icon" aria-label="Escolher emoji" title="Emojis e bandeiras" aria-expanded={emojiPickerOpen} disabled={disabled} onClick={() => setEmojiPickerOpen(value => !value)}><Smile size={14} /></button>
+            {emojiPickerOpen && <Suspense fallback={<span className="absolute bottom-full bg-white dark:bg-gray-900 p-2 text-xs">Carregando emojis…</span>}><EmojiPicker onClose={() => setEmojiPickerOpen(false)} onSelect={emoji => {
+              const field = textareaRef.current
+              const start = field?.selectionStart ?? input.length
+              const end = field?.selectionEnd ?? start
+              setInput(input.slice(0, start) + emoji + input.slice(end))
+              setEmojiPickerOpen(false)
+              requestAnimationFrame(() => { field?.focus(); field?.setSelectionRange(start + emoji.length, start + emoji.length) })
+            }} /></Suspense>}
+          </div>
           <VoiceButton
             ref={voiceRef}
             // Streaming dictation: interim chunks arrive while talking, the final
@@ -1045,8 +1106,8 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
               Druck steht jetzt als eine Regel in index.css und laeuft ueber
               die `transition` von `.lu-control` weich aus; die beiden
               Knoepfe brauchen framer-motion dafuer nicht mehr. */}
-          <div className="ml-auto shrink-0 w-[var(--control-h-sm)] h-[var(--control-h-sm)]" data-testid="composer-send-slot">
-            {isGenerating ? (
+          <div className="ml-auto flex shrink-0 items-center gap-1 h-[var(--control-h-sm)]" data-testid="composer-send-slot">
+            {isGenerating && (
               <button
                 // Called bare: the click event is not an argument of Stop (GH #140).
                 onClick={() => onStop()}
@@ -1055,19 +1116,21 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
                 // gibt ihm den Behaelter des neutralen Rezepts, damit er
                 // auffindbar bleibt, ohne die Fehlerfarbe zu tragen.
                 data-active="true"
-                className="lu-control lu-control--icon w-full h-full"
+                className="lu-control lu-control--icon h-full"
                 aria-label={uiText("Stop generation")}
               >
                 <Square size={13} />
               </button>
-            ) : (
+            )}
+            {(!isGenerating || willQueue) && (
               <button
                 onClick={handleSend}
-                disabled={preparingImages || preparingFiles || (!input.trim() && images.length === 0 && files.length === 0 && media.length === 0) || isTranscribing || !!waitingForLocalLane}
-                className="lu-control lu-control--icon lu-primary w-full h-full"
-                aria-label={uiText("Send message")}
+                disabled={disabled || preparingImages || preparingFiles || (!input.trim() && images.length === 0 && files.length === 0 && media.length === 0) || isTranscribing || (!!waitingForLocalLane && !willQueue)}
+                className="lu-control lu-control--icon lu-primary h-full"
+                aria-label={uiText(willQueue ? "Queue message" : "Send message")}
+                title={uiText(willQueue ? "Queue message" : "Send message")}
               >
-                <Send size={13} />
+                {willQueue ? <ListPlus size={14} /> : <Send size={13} />}
               </button>
             )}
           </div>

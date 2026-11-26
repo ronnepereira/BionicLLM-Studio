@@ -1001,31 +1001,44 @@ pub fn fs_delete(path: String, chatId: Option<String>, workingDirectory: Option<
     Ok(serde_json::json!({ "deleted": true }))
 }
 
-/// Explorer action: recycle a single workspace file, with no permanent-delete fallback.
-fn trash_workspace_file(
+/// Recycle an item selected in the Explorer.
+fn trash_workspace_item(
     path: &str,
     working_directory: &str,
+    is_directory: bool,
     recycle: impl FnOnce(&Path) -> Result<(), String>,
 ) -> Result<serde_json::Value, String> {
     if path.trim().is_empty() || working_directory.trim().is_empty() {
-        return Err("Informe o arquivo e a pasta de trabalho.".into());
+        return Err("Informe o item e a pasta de trabalho.".into());
     }
-    let full = resolve_path(path, None, Some(working_directory))?;
-    let root = workspace_root(None, Some(working_directory));
+    let root = lexical_normalize(&workspace_root(None, Some(working_directory)));
+    let full = contain_within(&root, &resolve_path(path, None, Some(working_directory))?)?;
     reject_root_as_write_target(&root, &full)?;
-    let meta = fs::symlink_metadata(&full).map_err(|_| "O arquivo não foi encontrado.".to_string())?;
-    if !meta.file_type().is_file() {
-        return Err("Somente arquivos podem ser enviados à Lixeira por este botão.".into());
+    for entry in full.ancestors().take_while(|entry| !is_within(entry, &root)) {
+        let meta = fs::symlink_metadata(entry).map_err(|e| format!("Não foi possível acessar {}. {e}", shown(entry)))?;
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
+            if meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+                return Err("Itens em atalhos de sistema de arquivos não podem ser enviados à Lixeira aqui.".into());
+            }
+        }
+        let kind = meta.file_type();
+        let expected = if entry == full.as_path() && !is_directory { kind.is_file() } else { kind.is_dir() };
+        if !expected {
+            return Err(format!("O tipo do item mudou ou não é compatível: {}", shown(entry)));
+        }
     }
-    recycle(&full).map_err(|error| format!("Não foi possível enviar o arquivo à Lixeira. {error}"))?;
+    recycle(&full).map_err(|error| format!("Não foi possível enviar o item à Lixeira. {error}"))?;
     Ok(serde_json::json!({ "trashed": true }))
 }
 
 #[tauri::command]
 #[allow(non_snake_case)]
-pub async fn fs_trash(path: String, workingDirectory: String) -> Result<serde_json::Value, String> {
+pub async fn fs_trash(path: String, workingDirectory: String, isDirectory: Option<bool>) -> Result<serde_json::Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        trash_workspace_file(&path, &workingDirectory, crate::commands::os_trash::system_trash)
+        trash_workspace_item(&path, &workingDirectory, isDirectory.unwrap_or(false), crate::commands::os_trash::system_trash)
     }).await.map_err(|error| format!("Não foi possível concluir a exclusão: {error}"))?
 }
 
@@ -3462,29 +3475,38 @@ mod explorer_recycle_tests {
         let path = project.join("proof.html");
         fs::write(&path, "own test artifact").unwrap();
         let root = project.to_str().unwrap();
-        let error = trash_workspace_file(path.to_str().unwrap(), root, |_| Err("bin unavailable".into()));
+        let error = trash_workspace_item(path.to_str().unwrap(), root, false, |_| Err("bin unavailable".into()));
         assert!(error.unwrap_err().contains("bin unavailable"));
         assert!(path.exists(), "a failed recycle must not permanently delete");
         let destination = temp.join("test-bin.html");
-        let result = trash_workspace_file(path.to_str().unwrap(), root, |file| fs::rename(file, &destination).map_err(|e| e.to_string())).unwrap();
+        let result = trash_workspace_item(path.to_str().unwrap(), root, false, |file| fs::rename(file, &destination).map_err(|e| e.to_string())).unwrap();
         assert_eq!(result["trashed"], true);
         assert!(!path.exists());
         assert_eq!(fs::read_to_string(destination).unwrap(), "own test artifact");
     }
     #[test]
-    fn recycle_refuses_directories_roots_and_escape_paths() {
+    fn recycle_moves_a_folder_as_one_item_and_refuses_roots_and_escape_paths() {
         let temp = crate::os_paths::test_dir("explorer-recycle-scope");
         let project = temp.join("project");
         fs::create_dir(&project).unwrap();
         remember_picked_root(&project).unwrap();
-        let nested = project.join("nested"); fs::create_dir(&nested).unwrap();
+        let nested = project.join("nested");
+        fs::create_dir(&nested).unwrap();
+        fs::write(nested.join("keep.txt"), "restore with parent").unwrap();
         let outside = temp.join("outside.txt"); fs::write(&outside, "keep").unwrap();
         let called = std::cell::Cell::new(false);
-        for path in [project.clone(), nested, outside.clone()] {
-            assert!(trash_workspace_file(path.to_str().unwrap(), project.to_str().unwrap(), |_| { called.set(true); Ok(()) }).is_err());
+        let root = project.to_str().unwrap();
+        for (path, is_directory) in [(&project, true), (&nested, false), (&outside, false)] {
+            assert!(trash_workspace_item(path.to_str().unwrap(), root, is_directory, |_| { called.set(true); Ok(()) }).is_err());
         }
         assert!(!called.get());
         assert!(outside.exists());
-        assert!(trash_workspace_file("", "", |_| Ok(())).is_err());
+        assert!(trash_workspace_item("", "", false, |_| Ok(())).is_err());
+        let destination = temp.join("folder-in-test-bin");
+        trash_workspace_item(nested.to_str().unwrap(), root, true, |folder| {
+            fs::rename(folder, &destination).map_err(|e| e.to_string())
+        }).unwrap();
+        assert!(!nested.exists());
+        assert_eq!(fs::read_to_string(destination.join("keep.txt")).unwrap(), "restore with parent");
     }
 }

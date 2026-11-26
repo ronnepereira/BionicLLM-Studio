@@ -76,6 +76,8 @@ pub mod os_trash;
 pub mod mlx_snapshot;
 pub mod music;
 pub mod plugin_rea;
+#[cfg(desktop)]
+pub mod plugin_remotion;
 pub mod plugin_updates;
 pub mod engine_updates;
 // What a phone must not run, and the check in front of every command.

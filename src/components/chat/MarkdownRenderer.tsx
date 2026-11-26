@@ -1,16 +1,21 @@
 import { useUiText } from "../../lib/ui-text"
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import 'katex/dist/katex.min.css'
-import { MATH_OPTIONS, contentNeedsKatex } from '../../lib/markdown-math'
-import { CodeBlock } from './CodeBlock'
+import { MATH_OPTIONS, chatContentNeedsKatex } from '../../lib/markdown-math'
+import { remarkChatMath } from '../../lib/remark-chat-math'
+import { CodeBlock, isHtmlSnippet } from './CodeBlock'
+import { InlineHtmlPreview } from './InlineHtmlPreview'
+import { rehypeColorSwatches, remarkVisualHtml } from '../../lib/markdown-colors'
 import { codeBlockText } from '../../lib/markdown-code'
 import { openExternal } from '../../api/backend'
 import { useComfyViewRescue, isInlineVideoUrl } from './comfyViewRescue'
 import { log } from '../../lib/logger'
 import type { Components, Options } from 'react-markdown'
+import type { Root as HtmlRoot } from 'hast'
+import { visit } from 'unist-util-visit'
 import { ExternalImagePreview } from './ExternalImagePreview'
 import { isDirectImageLink, remoteImageUrl } from '../../lib/external-image-preview'
 
@@ -56,17 +61,26 @@ function loadKatex(): Promise<void> {
  * Nachrichten bereit, ohne erneutes Laden.
  */
 function useRehypePlugins(content: string): RehypePlugins {
-  const needsKatex = contentNeedsKatex(content)
+  const needsKatex = chatContentNeedsKatex(content)
   const [katexReady, setKatexReady] = useState(() => katexPlugin !== null)
 
   useEffect(() => {
-    if (!needsKatex || katexPlugin) return
+    if (!needsKatex || katexReady) return
     let alive = true
     void loadKatex().then(() => { if (alive && katexPlugin) setKatexReady(true) })
     return () => { alive = false }
-  }, [needsKatex])
+  }, [needsKatex, katexReady])
 
-  return needsKatex && katexReady && katexPlugin ? [katexPlugin] : []
+  return needsKatex && katexReady && katexPlugin ? [katexPlugin, rehypeColorSwatches] : [rehypeColorSwatches]
+}
+
+function rehypeFootnoteLabels(prefix: string) {
+  return (tree: HtmlRoot) => {
+    visit(tree, 'element', node => {
+      if (node.properties.id === 'footnote-label') node.properties.id = prefix + 'footnote-label'
+      if (node.properties.dataFootnoteRef === true) node.properties.ariaDescribedBy = [prefix + 'footnote-label']
+    })
+  }
 }
 
 // Assistant output can embed images via markdown `![](url)`. Auto-loading an
@@ -123,7 +137,8 @@ const components: Components = {
       // box, which is what every code block looks like for the moment between
       // its opening fence and its first character. Live capture and the shapes
       // it has to survive are in lib/markdown-code.ts.
-      return <CodeBlock code={codeBlockText(children)} language={match?.[1]} />
+      const code = codeBlockText(children)
+      return isHtmlSnippet(code, match?.[1]) ? <InlineHtmlPreview code={code} language={match?.[1]} /> : <CodeBlock code={code} language={match?.[1]} />
     }
 
     return (
@@ -143,6 +158,18 @@ const components: Components = {
   },
   h3({ children }) {
     return <h3 className="text-base font-semibold mb-2 text-gray-900 dark:text-white">{children}</h3>
+  },
+  h4({ children }) {
+    return <h4 className="font-semibold mb-2">{children}</h4>
+  },
+  h5({ children }) {
+    return <h5 className="text-sm font-semibold mb-2">{children}</h5>
+  },
+  h6({ children }) {
+    return <h6 className="text-xs font-semibold mb-2">{children}</h6>
+  },
+  hr() {
+    return <hr className="my-4 border-gray-200 dark:border-white/15" />
   },
   ul({ children }) {
     return <ul className="list-disc list-outside pl-6 mb-3 space-y-1">{children}</ul>
@@ -170,7 +197,19 @@ const components: Components = {
   td({ children, style }) {
     return <td style={style} className="border border-gray-200 dark:border-white/10 px-3 py-2">{children}</td>
   },
-  a({ href, children, node }) {
+  a({ href, children, node, id, 'aria-describedby': description, 'aria-label': label }) {
+    if (href?.startsWith('#') && node && ('dataFootnoteRef' in node.properties || 'dataFootnoteBackref' in node.properties)) {
+      return (
+        <a id={id} href={href} aria-describedby={description} aria-label={label}
+          className="text-blue-600 dark:text-blue-400 hover:underline"
+          onClick={event => {
+            event.preventDefault()
+            document.getElementById(href.slice(1))?.scrollIntoView({ block: 'nearest' })
+          }}>
+          {children}
+        </a>
+      )
+    }
     if (href && isDirectImageLink(href)) return <ExternalImagePreview key={href} src={href} alt={typeof children === 'string' ? children : 'Imagem encontrada na internet'} />
     // Linked markdown images already have their own preview controls.
     if (node?.children.some(child => child.type === 'element' && child.tagName === 'img')) return <span>{children}<button type="button" onClick={() => { if (href) void openExternal(href) }} className="text-blue-600 dark:text-blue-400 hover:underline">Abrir página de origem ↗</button></span>
@@ -206,9 +245,16 @@ const components: Components = {
 
 export function MarkdownRenderer({ content }: Props) {
   const rehypePlugins = useRehypePlugins(content)
+  const footnotePrefix = 'chat-' + useId() + '-'
+  const uiText = useUiText()
   return (
     <div className="markdown-content text-left whitespace-normal min-w-0 max-w-full [overflow-wrap:anywhere] text-gray-800 dark:text-gray-200">
-      <ReactMarkdown remarkPlugins={[remarkGfm, [remarkMath, MATH_OPTIONS]]} rehypePlugins={rehypePlugins} components={components}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, [remarkMath, MATH_OPTIONS], remarkChatMath, remarkVisualHtml]}
+        remarkRehypeOptions={{ clobberPrefix: footnotePrefix, footnoteLabel: uiText("Footnotes"), footnoteBackLabel: () => uiText("Back to reference") }}
+        rehypePlugins={[[rehypeFootnoteLabels, footnotePrefix], ...rehypePlugins]}
+        components={components}
+      >
         {content}
       </ReactMarkdown>
     </div>

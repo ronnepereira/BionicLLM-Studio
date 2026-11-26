@@ -28,12 +28,21 @@ describe('the notices for Voice and computer control match what is pinned', () =
   })
 
   it('shows the credit lines of the models word for word', () => {
-    const models = JSON.parse(read(`${voice}/models.json`)) as { models: { name: string; license: string; revision: string; attribution?: string }[] }
+    const models = JSON.parse(read(`${voice}/models.json`)) as {
+      models: { name: string; license: string; files: unknown[]; revision?: string; attribution?: string }[]
+    }
     const credits = models.models.filter((model) => model.attribution)
     expect(credits.length).toBeGreaterThan(0)
     for (const model of models.models) {
-      expect(notices).toContain(`| ${model.name} | ${model.license} |`)
-      expect(notices).toContain(model.revision.slice(0, 12))
+      const row = notices.split('\n').find((line) => line.startsWith(`| ${model.name} | `))
+      if (model.files.length > 0) {
+        expect(row, model.name).toContain(`| ${model.license} |`)
+        expect(model.revision, model.name).toBeTruthy()
+        expect(row, model.name).toContain(model.revision?.slice(0, 12))
+      } else {
+        expect(row, model.name).toContain('| Hosted service |')
+        expect(model.attribution, model.name).toBeTruthy()
+      }
       if (model.attribution) expect(notices).toContain(model.attribution)
     }
   })

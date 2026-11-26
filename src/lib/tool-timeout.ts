@@ -51,7 +51,7 @@ export const NO_PRACTICAL_CAP_MS = 2_147_483_000
  * network, so neither can legitimately run anywhere near 60 s, and the
  * generic default stays their real backstop.
  */
-const AGENT_LOOP_TOOLS = new Set(['delegate_task', 'run_workflow'])
+const AGENT_LOOP_TOOLS = new Set(['delegate_task', 'run_workflow', 'studio_agents_run', 'remotion_compositions', 'remotion_preview', 'remotion_render'])
 
 /**
  * `computer_use` and `computer_task` wait for a person: every call can stop

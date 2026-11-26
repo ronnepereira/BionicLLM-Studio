@@ -21,6 +21,9 @@ export function revealBrowser() {
 }
 export async function browserCommand<T = Record<string, unknown>>(request: Record<string, unknown>): Promise<T> {
   if (!isTauri()) throw new Error('A navegação interna funciona no aplicativo desktop para Windows, não nesta prévia web.')
+  if (request.action === 'stop' && request.tabId && request.tabId !== useBrowserStore.getState().activeTab) {
+    throw new Error('A aba do navegador mudou.')
+  }
   return backendCall<T>('studio_browser', { request })
 }
 /** The browser is shared visually. A second live agent cannot take over another run's page. */
@@ -33,20 +36,20 @@ export function claimBrowser(run?: AgentRunContext) {
 export async function browserReady(signal?: AbortSignal) {
   if (!isTauri()) throw new Error('A navegação interna funciona no aplicativo desktop para Windows, não nesta prévia web.')
   revealBrowser()
-  await waitForBrowser(() => useBrowserStore.getState().ready, signal)
+  const tabId = useBrowserStore.getState().activeTab
+  await waitForBrowser(() => useBrowserStore.getState().ready, signal, tabId)
+  return tabId
 }
-export async function waitForBrowser(condition: () => boolean, signal?: AbortSignal) {
+export async function waitForBrowser(condition: () => boolean, signal?: AbortSignal, tabId = useBrowserStore.getState().activeTab) {
   const deadline = Date.now() + 28_000
-  while (!condition()) {
+  for (;;) {
     if (signal?.aborted) throw new Error('Navegação cancelada pelo usuário.')
     const state = useBrowserStore.getState()
     if (!state.open) throw new Error('O navegador foi fechado pelo usuário.')
+    if (state.activeTab !== tabId) throw new Error('A aba do navegador mudou.')
     if (state.error) throw new Error(state.error)
+    if (condition()) return
     if (Date.now() > deadline) throw new Error('O navegador não respondeu a tempo. Confira o painel antes de repetir a ação.')
     await new Promise(resolve => setTimeout(resolve, 100))
   }
-  if (signal?.aborted) throw new Error('Navegação cancelada pelo usuário.')
-  const state = useBrowserStore.getState()
-  if (!state.open) throw new Error('O navegador foi fechado pelo usuário.')
-  if (state.error) throw new Error(state.error)
 }

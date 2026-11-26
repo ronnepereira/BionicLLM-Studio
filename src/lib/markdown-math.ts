@@ -26,8 +26,12 @@ export const MATH_OPTIONS = { singleDollarTextMath: false } as const
 // der CommonMark-Regel): ein tief in einer Liste verschachtelter Zaun bleibt so
 // erfasst. Die Regel irrt damit nur in die harmlose Richtung — sie lädt einmal
 // zu viel, nie einmal zu wenig.
-const MATH_FENCE = /(?:^|\n)[ \t]*(?:`{3,}|~{3,})[ \t]*math(?![\w-])/
+const MATH_FENCE = /(?:`{3,}|~{3,})[ \t]*math(?![\w-])/
 
 export function contentNeedsKatex(content: string): boolean {
   return content.includes('$$') || MATH_FENCE.test(content)
+}
+
+export function chatContentNeedsKatex(content: string): boolean {
+  return contentNeedsKatex(content) || /\\[([]|[$][^$\r\n]+[$]/.test(content)
 }

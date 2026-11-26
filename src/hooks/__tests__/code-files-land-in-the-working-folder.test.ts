@@ -39,7 +39,7 @@ import { DEFAULT_SETTINGS } from '../../lib/constants'
 import { toolRegistry, registerBuiltinTools } from '../../api/mcp'
 import type { ChatFileInput } from '../../lib/chat-files'
 
-const MODEL = 'lu-cloud::zai-org/GLM-5.3'
+const MODEL = 'openai::queue-test-model'
 const BYTES = new Uint8Array([0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01, 0x00, 0xff])
 
 function attached(): ChatFileInput {
@@ -68,9 +68,9 @@ beforeEach(() => {
   useGenerationStore.setState({ generating: {}, aborters: {}, runs: {} })
   useAgentModeStore.setState({ agentModeActive: {}, workspaces: {}, workspaceSlugs: {} })
   useChatNoticeStore.getState().clear()
-  useSettingsStore.setState({ settings: { ...DEFAULT_SETTINGS, appMode: 'cloud', cavemanMode: 'off' } })
+  useSettingsStore.setState({ settings: { ...DEFAULT_SETTINGS, appMode: 'local', cavemanMode: 'off' } })
   useProviderStore.setState((s) => ({
-    providers: { ...s.providers, 'lu-cloud': { ...s.providers['lu-cloud'], enabled: true } },
+    providers: { ...s.providers, openai: { ...s.providers.openai, enabled: true } },
   }))
   useModelStore.setState({ models: [], activeModel: MODEL })
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -126,6 +126,29 @@ describe('Code: the attached file is in the working folder of the run', () => {
     const { result } = renderHook(() => useCodex())
     await act(async () => { await result.current.sendInstruction('look at it', { files: [attached()] }) })
     expect(uploads[0].workingDirectory).toBe('/home/me/project')
+  })
+
+  it('uses the queued Code conversation, model and folder after the selection changes', async () => {
+    const origin = openCodeChat()
+    const visible = openCodeChat()
+    useCodexStore.setState({ workingDirectory: '/home/me/other-project' })
+    useModelStore.setState({ activeModel: 'openai::other-model' })
+    const { result } = renderHook(() => useCodex())
+
+    await act(async () => {
+      await result.current.sendInstruction('inspect this attachment', {
+        files: [attached()],
+        conversationId: origin,
+        model: MODEL,
+        queuedWorkingDirectory: '/home/me/original-project',
+      })
+    })
+
+    expect(uploads[0].workingDirectory).toBe('/home/me/original-project')
+    expect(userMessage(origin).displayContent).toBe('inspect this attachment')
+    expect(useChatStore.getState().activeConversationId).toBe(visible)
+    expect(useChatStore.getState().conversations.find(chat => chat.id === visible)?.messages).toEqual([])
+    expect(useChatStore.getState().conversations.find(chat => chat.id === origin)?.messages.find(message => message.role === 'assistant')?.modelId).toBe(MODEL)
   })
 
   it('NEGATIVE CONTROL: an instruction without files uploads nothing and is stored as typed', async () => {

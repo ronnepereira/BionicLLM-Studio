@@ -85,8 +85,47 @@ import {
 } from '../sub-agent'
 import type { ChatMessage } from '../../providers/types'
 import { AgentBudget } from '../budget'
+import { runStudioTeam, type StudioAgentSession } from '../studio-team'
 import type { AgentRunContext } from '../../agent-context'
 import { dequeueApproval, headApproval, resetApprovals } from '../../../lib/approval-queue'
+
+describe('saved-agent team provider loop', () => {
+  beforeEach(() => {
+    permLevel = 'auto'; chatWithTools.mockReset(); toolExecute.mockReset()
+    toolExecute.mockResolvedValue('tool output'); resetApprovals()
+  })
+  it('continues beyond the five-step slice and preserves matching tool call results', async () => {
+    let turns = 0
+    chatWithTools.mockImplementation(async () => {
+      turns++
+      return { content: '', toolCalls: [{ id: `tc-${turns}`, function: turns <= 7
+        ? { name: 'shell_execute', arguments: { command: `read file-${turns}` } }
+        : { name: 'studio_agent_report', arguments: { status: 'completed', summary: 'Arquivos gravados, revisados e testes passaram.' } } }] }
+    })
+    const result = await runStudioTeam([{ id: 'writer', name: 'Autor', instructions: 'Implemente e teste.', model: '' }], 'Criar o código',
+      (_agent, goal, context, session) => defaultSubAgentRunner(goal, context, { budget: new AgentBudget({ maxToolCalls: 10, maxIterations: 5 }), session, run: makeRun() }))
+    expect(result.status).toBe('completed'); expect(turns).toBe(8)
+    expect(toolExecute).toHaveBeenCalledTimes(7)
+    const messages = chatWithTools.mock.calls.at(-1)![1] as ChatMessage[]
+    for (let i = 1; i <= 7; i++) expect(messages.some(m => m.role === 'tool' && m.tool_call_id === `tc-${i}`)).toBe(true)
+    expect(chatWithTools.mock.calls[0][2].some((t: { function: { name: string } }) => t.function.name === 'studio_agent_report')).toBe(true)
+  })
+  it('stops six repeated actions across slice boundaries', async () => {
+    chatWithTools.mockResolvedValue({ content: '', toolCalls: [{ id: 'tc', function: { name: 'shell_execute', arguments: { command: 'same command' } } }] })
+    const result = await runStudioTeam([{ id: 'writer', name: 'Autor', instructions: 'Implemente.', model: '' }], 'Criar o código',
+      (_agent, goal, context, session) => defaultSubAgentRunner(goal, context, { budget: new AgentBudget({ maxToolCalls: 10, maxIterations: 5 }), session, run: makeRun() }))
+    expect(result.status).toBe('blocked'); expect(chatWithTools.mock.calls.length).toBeLessThan(10)
+  })
+  it('does not treat prose as completion or dispatch recursively hidden tools', async () => {
+    chatWithTools.mockResolvedValueOnce({ content: '', toolCalls: [{ id: 'tc', function: { name: 'delegate_task', arguments: { goal: 'spawn again' } } }] })
+    chatWithTools.mockResolvedValueOnce({ content: 'Tudo pronto.', toolCalls: [] })
+    chatWithTools.mockResolvedValue({ content: '', toolCalls: [{ id: 'report', function: { name: 'studio_agent_report', arguments: { status: 'blocked', summary: 'Falta a pasta do projeto.' } } }] })
+    const session: StudioAgentSession = { messages: [], toolCalls: 0, stalled: 0 }
+    await defaultSubAgentRunner('goal', 'context', { budget: new AgentBudget({ maxToolCalls: 10, maxIterations: 8 }), session, run: makeRun() })
+    expect(toolExecute).not.toHaveBeenCalled()
+    expect(session.report).toEqual({ status: 'blocked', summary: 'Falta a pasta do projeto.' })
+  })
+})
 
 describe('sub-agent — tool definition', () => {
   it('has the expected shape', () => {

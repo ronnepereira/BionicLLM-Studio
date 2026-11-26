@@ -108,6 +108,8 @@ export interface Settings {
   /** REA, the reverse engineering plugin of the agents (lib/plugins/rea.ts):
    *  on starts its local MCP server. Default off. */
   reaPluginEnabled: boolean
+  remotionPluginEnabled: boolean
+  remotionProjectPath: string
   /**
    * How hard a reasoning model should think (2.6.8). One global rung, the same
    * way thinkingEnabled is one global switch, and it reaches Chat, Agent mode

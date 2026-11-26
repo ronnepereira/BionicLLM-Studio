@@ -50,6 +50,7 @@ import { copyFailedMessage, fileMessageFields, placeChatFiles, toolRoutingText, 
 import { fitFilesForSend, requestTextOf } from './chat-file-room'
 import type { FileAttachment } from '../types/chat'
 import { useAgentModeStore } from '../stores/agentModeStore'
+import type { ComposerQueueTarget } from '../stores/composerQueueStore'
 import { loadLurules, renderRulesSection } from '../lib/lurules'
 import {
   parseAgentCommand, parseLoopSpec, buildLoopRecheck,
@@ -94,7 +95,8 @@ import { truncateToolResult } from '../lib/truncate-tool-result'
 import { toolCallCapMs, raceWithToolTimeout, SHELL_EXECUTE_DEFAULT_TIMEOUT_MS } from '../lib/tool-timeout'
 import { getModelMaxTokens, estimateTokens } from '../lib/context-compaction'
 import { capToLearnedWindow, contextOverflowOf, learnSendWindow, shrunkSendWindow } from './codex/context-overflow'
-import { buildRequestMessages, trimWorkingHistory, decayRestoredToolResult, isToolResult } from '../lib/context-decay'
+import { buildRequestMessages, trimWorkingHistory } from '../lib/context-decay'
+import { codexHistoryMessage, codexPromptMessages } from '../lib/codex-history-message'
 import { effectiveSendWindow } from '../lib/send-window'
 import { sendsToALanBackend } from '../lib/lan-openai-slot'
 import { useSendSizeStore } from '../stores/sendSizeStore'
@@ -126,6 +128,7 @@ import { codexCutoffNote, dropCutOffCall } from './codex/turn-cutoff'
 import { codexToolDiff, codexEventKind } from './codex/tool-result-view'
 import { capHiddenToolHistory } from './codex/hidden-history'
 import { withHouseConduct } from '../lib/system-prompt'
+import { remotionRoutingText } from '../lib/plugins/remotion-tools'
 import { useSkillStore } from '../stores/skillStore'
 import { yieldSilentRunsTo } from '../lib/silent-runs-yield'
 import { gatePlanTool, planToolAllowed } from '../lib/plan-gate'
@@ -150,7 +153,7 @@ function diagLog(tag: string, data: Record<string, unknown>): void {
 // framing for a read-only reviewer and would fight the executor gate. The
 // list-stripping below (MUTATING_TOOLS) still enforces
 // read-only programmatically even if the model tries a write tool anyway.
-const CODEX_REVIEW_SYSTEM_PROMPT = `You are the Coding Agent in REVIEW MODE, a read-only code reviewer inside LU. You DO NOT modify any files or change any state. Your job is to read code with file_read / file_list / file_search plus inspection commands over shell_execute (git status, git log, git diff, git show, git blame, ls, cat, pwd) and return INLINE COMMENTS only.
+const CODEX_REVIEW_SYSTEM_PROMPT = `You are the Coding Agent in REVIEW MODE, a read-only code reviewer inside BionicLLM Studio. You DO NOT modify any files or change any state. Your job is to read code with file_read / file_list / file_search plus inspection commands over shell_execute (git status, git log, git diff, git show, git blame, ls, cat, pwd) and return INLINE COMMENTS only.
 
 REVIEW MODE CONTRACT (binding):
 - You MAY call: file_read, file_list, file_search, web_fetch, web_search, and shell_execute for INSPECTION ONLY (git status/log/diff/show/blame, ls, cat, pwd; one command, no chaining).
@@ -158,7 +161,7 @@ REVIEW MODE CONTRACT (binding):
 - Output format: a markdown report with sections "## Summary", "## Findings (priority order)", "## Suggested follow-ups". For each finding cite the file + line range (path:line or path:start-end).
 - Be direct. No flattery, no boilerplate. If the code is fine, say so in one sentence and stop.`
 
-const CODEX_SYSTEM_PROMPT = `You are the Coding Agent, an autonomous coding agent inside LU. You execute coding tasks end-to-end by reading files, writing code, and running shell commands. You MUST use tools, never guess file contents.
+const CODEX_SYSTEM_PROMPT = `You are the Coding Agent, an autonomous coding agent inside BionicLLM Studio. You execute coding tasks end-to-end by reading files, writing code, and running shell commands. You MUST use tools, never guess file contents.
 
 AUTONOMY CONTRACT (read carefully):
 - You are expected to COMPLETE multi-step tasks without the user prompting between steps.
@@ -210,7 +213,7 @@ const CODEX_ASSET_LINE = `- Asset generation: when the task needs an image or a 
 // workflow prose costs more than it buys. Keep only the essentials and stay
 // faithful to the native tool-call format. Selected at the injection point
 // below when settings.smallModelMode is on (review mode still wins).
-const CODEX_SYSTEM_PROMPT_LEAN = `You are a coding agent in LU. Use tools to do the work, never guess file contents.
+const CODEX_SYSTEM_PROMPT_LEAN = `You are a coding agent in BionicLLM Studio. Use tools to do the work, never guess file contents.
 
 Rules:
 - Put independent tool calls into one response (several reads or edits at once). Every step costs the user money.
@@ -366,6 +369,7 @@ export function useCodex() {
        * shell tools can open the real bytes. See lib/chat-files.ts.
        */
       files?: ChatFileInput[]
+      images?: import('../types/chat').ImageAttachment[]
       /**
        * The mode the composer showed when the person pressed Send (A37). The
        * run never takes a looser mode than the one on screen: where this and
@@ -373,9 +377,10 @@ export function useCodex() {
        * pinned to it, so the next look at the trigger tells the truth.
        */
       shownMode?: CodexMode
-    },
+      queuedWorkingDirectory?: string
+    } & Partial<ComposerQueueTarget>,
   ) => {
-    const { activeModel } = useModelStore.getState()
+    const activeModel = opts?.model ?? useModelStore.getState().activeModel
     if (!activeModel) return
 
 
@@ -422,7 +427,8 @@ export function useCodex() {
     const persona = useSettingsStore.getState().getActivePersona()
 
     // Ensure conversation exists
-    let convId = store.activeConversationId
+    let convId = opts?.conversationId ?? store.activeConversationId
+    if (opts?.conversationId && !store.conversations.some(chat => chat.id === convId)) return
     if (!convId) {
       convId = store.createConversation(activeModel, persona?.systemPrompt || '', 'codex')
       useCodexStore.getState().startConversationMode(convId)
@@ -531,7 +537,7 @@ export function useCodex() {
     // Pull THIS conversation's thread onto the folder the picker shows now.
     // Only this one: another chat's thread may carry a deliberate per-chat
     // workspace, and rewriting all of them took that away (A8 review, S5).
-    const liveWorkingDir = useCodexStore.getState().syncThreadWorkingDirectory(convId)
+    const liveWorkingDir = opts?.queuedWorkingDirectory ?? useCodexStore.getState().syncThreadWorkingDirectory(convId)
 
     const thread = useCodexStore.getState().getThread(convId)!
     // Welcher Ordner: Rangfolge, Sperre und die Zusicherung, dass beide
@@ -546,7 +552,7 @@ export function useCodex() {
     // gedruecktes Entfernen wurde von einem Abzug wieder aufgehoben
     // (A8-Durchsicht, B1).
     const { workDir, runWorkspace } = resolveCodexWorkspace({
-      threadWorkingDirectory: thread.workingDirectory,
+      threadWorkingDirectory: opts?.queuedWorkingDirectory ?? thread.workingDirectory,
       codexWorkspace,
       storeWorkingDirectory: liveWorkingDir,
     })
@@ -685,6 +691,7 @@ export function useCodex() {
       // With files: the instruction plus one summary block per file, and the
       // typed text as what the transcript shows.
       ...fileMessageFields(instruction, attachedFiles, 'workspace'),
+      ...(opts?.images?.length ? { images: opts.images } : {}),
       ...(displayInstruction ? { displayContent: displayInstruction } : {}),
       ...(opts?.hiddenUser ? { hidden: true } : {}),
     })
@@ -947,33 +954,10 @@ export function useCodex() {
       // in exactly the array this payload is built from — which is the reason
       // this call sits inside each builder rather than in a shared wrapper.
       ...applyStoredCompaction(
-        convForPayload.messages.filter(m => m.role !== 'system' && (m.content.trim() || m.hidden)),
+        convForPayload.messages.filter(m => m.role !== 'system' && (m.content.trim() || m.hidden || m.images?.length)),
         convForPayload.compactions,
       ).messages
-        .map(m => {
-          const msg: ChatMessage = {
-            role: m.role as 'user' | 'assistant' | 'tool',
-            content: m.role === 'user' && cavemanReminder
-              ? `${cavemanReminder}\n${m.content}`
-              : m.content,
-          }
-          if (decayRestored && m.hidden && isToolResult(msg)) {
-            msg.content = decayRestoredToolResult(msg.content)
-          }
-          // Carry over tool_calls from hidden assistant messages so the
-          // model sees the full tool-call chain from previous turns
-          // (continue capability, parity with original Codex CLI).
-          // types/chat.Message.tool_calls and providers/types.ToolCall declare
-          // the identical shape, so the assertion never bridged anything.
-          if (m.tool_calls) msg.tool_calls = m.tool_calls
-          // Carry the tool-result linkage across turns too. ed99f82 sets
-          // tool_call_id on role:'tool' messages INSIDE the loop, but the
-          // persist+rebuild round-trip below dropped it — so the SECOND user
-          // turn replayed tool results with no tool_call_id and the upstream
-          // (lu-cloud) 422'd "tool_call_id: Field required", wedging the chat.
-          if (m.tool_call_id) msg.tool_call_id = m.tool_call_id
-          return msg
-        }),
+        .map(m => codexHistoryMessage(m, cavemanReminder, decayRestored)),
     ]
     // G27b: a new turn on a conversation whose plan is still open gets the
     // plan handed to it instead of being asked to find it again (the owner,
@@ -1497,7 +1481,8 @@ export function useCodex() {
           // pushed as role 'user', and routing on those swapped the tool list
           // mid-run to whatever the harness happened to say last. The real
           // instruction is the routing intent for the whole run.
-          const lastUserMsg = browserRoutingText(toolRoutingText(instruction, attachedFiles), (useChatStore.getState().conversations
+          const remotionText = remotionRoutingText(instruction, (useChatStore.getState().conversations.find(c=>c.id===convId)?.messages??[]).slice(-12))
+          const lastUserMsg = browserRoutingText(toolRoutingText(remotionText, attachedFiles), (useChatStore.getState().conversations
             .find((c) => c.id === convId)?.messages ?? []).filter((message) => message.role === 'user').map((message) => message.content))
           // CODEX_CATEGORIES filter: Codex is a CODING agent — screenshot,
           // run_workflow etc. are distractions that pollute the tool list for
@@ -1847,7 +1832,7 @@ export function useCodex() {
           const runHermes = (opts: typeof hermesOpts) => streamProviderTurn(
             provider,
             modelToUse,
-            sendMessages.map(m => ({ role: m.role, content: m.content })),
+            codexPromptMessages(sendMessages),
             opts,
             (_full, delta) => feedUI(splitter.feed(display.feed(delta))),
             // A prompt-transport backend can still answer on the NATIVE
@@ -3021,7 +3006,7 @@ export function useCodex() {
     // An instruction a person gave outranks what the app runs on its own.
     // A pass of /loop and the wake-up turn of a background agent are the
     // app's own turns and end nothing (lib/silent-runs-yield.ts).
-    if (!opts?.loop && !opts?.hiddenUser) yieldSilentRunsTo(useModelStore.getState().activeModel)
+    if (!opts?.loop && !opts?.hiddenUser) yieldSilentRunsTo(opts?.model ?? useModelStore.getState().activeModel)
     useCodexStore.getState().beginSend()
     try {
       await runInstruction(rawInstruction, opts)

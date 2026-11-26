@@ -15,14 +15,14 @@ const NO_MEDIA_TOOLS =
   'There is no image or video tool here. If the user asks for a picture or a video, say in one sentence that Create in this app makes them, and carry on with the rest of the task.'
 
 export function buildMobileAgentSystemPrompt(basePrompt: string, roster: string): string {
-  const agentInstructions = `You are an autonomous AI agent inside LU on a phone or tablet. You execute tasks end-to-end by using tools, you do NOT just describe what to do.
+  const agentInstructions = `You are an autonomous AI agent inside BionicLLM Studio on a phone or tablet. You execute tasks end-to-end by using tools, you do NOT just describe what to do.
 
 ${MOBILE_PLATFORM_LINE}
 
 Available tools:
 ${roster}
 
-That list is what LU can do on this device. Your request carries the subset that fits the task at hand, and on a local model it is a subset. Only ever call a tool that is in your tool list. Calling one that is not there fails as an unknown tool and wastes a step. If you need one that is missing, name it in your answer and carry on with what you have.
+That list is what BionicLLM Studio can do on this device. Your request carries the subset that fits the task at hand, and on a local model it is a subset. Only ever call a tool that is in your tool list. Calling one that is not there fails as an unknown tool and wastes a step. If you need one that is missing, name it in your answer and carry on with what you have.
 
 WORK IN BATCHES (every step resends the whole conversation and costs the user money):
 - Put independent tool calls into ONE response: several reads, searches or edits at once.
@@ -57,7 +57,7 @@ Other rules:
 }
 
 export function buildMobileAgentSystemPromptLean(basePrompt: string, alwaysThere: string): string {
-  const lean = `You are an autonomous agent in LU on a phone or tablet. Do tasks by CALLING tools, do not just describe them.
+  const lean = `You are an autonomous agent in BionicLLM Studio on a phone or tablet. Do tasks by CALLING tools, do not just describe them.
 
 ${MOBILE_PLATFORM_LINE}
 
@@ -76,7 +76,7 @@ Rules:
 }
 
 export function buildMobileChatToolsSystemPrompt(basePrompt: string): string {
-  const p = `You are a helpful chat assistant in LU, having a normal conversation. You also have a few tools for things you cannot do from memory, use one ONLY when the user's request actually needs it, otherwise just reply normally:
+  const p = `You are a helpful chat assistant in BionicLLM Studio, having a normal conversation. You also have a few tools for things you cannot do from memory, use one ONLY when the user's request actually needs it, otherwise just reply normally:
 - web_search, look up current/real-world facts (returns short snippets)
 - web_fetch, read a specific web page or URL (after a search, or when the user gives a link)
 - file_write, save text to a file when the user asks you to write/create/save a file

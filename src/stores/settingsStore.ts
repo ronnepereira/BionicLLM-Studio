@@ -241,6 +241,8 @@ export const useSettingsStore = create<SettingsState>()(
         }
         // REA plugin (3.0.7): only a real true starts a process.
         state.settings.reaPluginEnabled = state.settings.reaPluginEnabled === true
+        state.settings.remotionPluginEnabled = state.settings.remotionPluginEnabled === true
+        if (typeof state.settings.remotionProjectPath !== 'string' || !state.settings.remotionProjectPath.trim()) state.settings.remotionProjectPath = 'C:\\RemotionApp'
         // 3.0.8 (A2): background generations are on unless switched off, and
         // the card per service is read defensively, a hand-edited profile
         // must not send a half pick to the backend.

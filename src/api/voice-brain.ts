@@ -23,7 +23,8 @@ import { CLOUD_BASE } from './cloud/config'
 import { getAccessToken } from './cloud/supabase'
 import { backendCall } from './backend'
 import { ollamaNumCtx } from './ollama'
-import { displayModelName } from './providers/model-name'
+import { isCompatProviderId } from './providers/compat-id'
+import { displayModelName, openaiEntryOfModel } from './providers/model-name'
 
 /** The `llm` block of the voice loop's session request. */
 export interface VoiceLlmConfig {
@@ -234,15 +235,17 @@ export async function resolveVoiceBrain(activeModel: string | null | undefined, 
     // A voice session is a chat that is spoken: it runs in the chat window of
     // this model, from the one place every request to Ollama gets its window.
     ollamaNumCtxForVoice = await ollamaNumCtx(modelToUse, 'chat')
-  } else if (providerId === 'openai') {
+  } else if (providerId === 'openai' || isCompatProviderId(providerId)) {
+    const entryId = openaiEntryOfModel(activeModel)
     // The app's own engine sleeps after a render and may hold another model.
     // Wake it on this model before the session starts, exactly as a chat
     // message would. It can come back on another port, so read the URL after.
-    if (useProviderStore.getState().providers.openai.managed === true) {
+    const managed = providerId === 'openai' && !entryId && useProviderStore.getState().providers.openai.managed === true
+    if (managed) {
       try {
         await ensureBuiltinEngineAlive(modelToUse)
       } catch (error) {
-        throw new VoiceBrainError('model-error', error instanceof Error ? error.message : 'The LU Engine did not start.')
+        throw new VoiceBrainError('model-error', error instanceof Error ? error.message : 'The BU Engine did not start.')
       }
       // Tool schemas need room. Same lift the agent chat gives the engine
       // before a run with tools. Never throws.
@@ -253,15 +256,17 @@ export async function resolveVoiceBrain(activeModel: string | null | undefined, 
       }
     }
     const state = useProviderStore.getState()
-    baseUrl = trimSlashes(state.providers.openai.baseUrl)
-    apiKey = state.getProviderApiKey('openai') || undefined
+    const config = entryId ? state.openaiEntries.find((entry) => entry.entryId === entryId) : state.providers[providerId]
+    if (!config) throw new VoiceBrainError('model-error', 'This model’s provider is no longer configured. Pick another model in Chat.')
+    baseUrl = trimSlashes(config.baseUrl)
+    apiKey = (entryId ? state.getOpenAIEntryApiKey(entryId) : state.getProviderApiKey(providerId)) || undefined
     // The LU Engine answers to its own key only (src-tauri engine_key.rs), and
     // the voice service talks to it directly. The Rust side hands it out for an
     // address that is one of its engines and for nothing else.
-    if (state.providers.openai.managed === true) {
+    if (managed) {
       apiKey = (await backendCall<string | null>('engine_key_for', { url: `${baseUrl}/chat/completions` }).catch(() => null)) ?? apiKey
     }
-    local = state.providers.openai.isLocal === true || isPrivateOrLanHost(hostnameOf(baseUrl))
+    local = config.isLocal === true || isPrivateOrLanHost(hostnameOf(baseUrl))
   } else {
     throw new VoiceBrainError(
       'unsupported-model',

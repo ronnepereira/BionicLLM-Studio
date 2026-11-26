@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { v4 as uuid } from 'uuid'
 import { safeJSONStorage } from '../lib/storage-quota'
-import { changeSchedules } from './scheduleStore'
+import { changeSchedules, registerScheduledProfileRemoval } from './scheduleStore'
 import { isRecord } from '../types/json-guards'
 import { agentProfileInput, type StudioAgentProfile } from '../lib/agent-profiles'
 
@@ -46,3 +46,7 @@ export const useAgentProfileStore = create<ProfileState>()(persist((set) => ({
     return { ...current, profiles }
   },
 }))
+
+registerScheduledProfileRemoval(id => {
+  useAgentProfileStore.setState(state => ({ profiles: state.profiles.filter(profile => profile.id !== id) }))
+})

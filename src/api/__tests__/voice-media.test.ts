@@ -94,6 +94,28 @@ afterEach(() => {
 })
 
 describe('the microphone before the voice loop is connected', () => {
+  it('releases both the current and pending microphone when the session ends', async () => {
+    const abort = new AbortController()
+    const current = fakeStream()
+    const late = fakeStream()
+    let resolveOpening!: (stream: MediaStream) => void
+    const opening = new Promise<MediaStream>((resolve) => { resolveOpening = resolve })
+    const getUserMedia = vi.mocked(navigator.mediaDevices.getUserMedia)
+    getUserMedia.mockResolvedValueOnce(current as unknown as MediaStream)
+    const { media } = await opened({ signal: abort.signal })
+    getUserMedia.mockReturnValueOnce(opening)
+    const switching = media.updateMic('mic-2')
+
+    abort.abort()
+    await media.disconnect()
+    expect(current.getTracks()[0].stop).toHaveBeenCalledOnce()
+    resolveOpening(late as unknown as MediaStream)
+    await switching
+    expect(late.getTracks()[0].stop).toHaveBeenCalledOnce()
+    await expect(media.connect()).rejects.toThrow('The session was stopped.')
+    expect(getUserMedia).toHaveBeenCalledTimes(2)
+  })
+
   it('is held, and goes out first and in order once the session is up', async () => {
     const { media, sent, context } = await opened()
     speak(context, 0.25); speak(context, 0.5)

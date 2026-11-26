@@ -109,10 +109,10 @@ describe('VoiceHistory', () => {
     expect(messages()[1].agentBlocks![0].toolCalls![0].status).toBe('rejected')
   })
 
-  it('removes the conversation of a session in which nothing was said', () => {
+  it('removes the conversation of a session in which nothing was said', async () => {
     const { history, conversationId } = open()
     history.finish()
-    expect(useChatStore.getState().conversations.some((c) => c.id === conversationId)).toBe(false)
+    await vi.waitFor(() => expect(useChatStore.getState().conversations.some((c) => c.id === conversationId)).toBe(false))
     expect(extract).not.toHaveBeenCalled()
   })
 

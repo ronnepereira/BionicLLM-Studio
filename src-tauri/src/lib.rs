@@ -1016,6 +1016,9 @@ pub fn run() {
             commands::plugin_rea::plugin_rea_status,
             commands::plugin_rea::plugin_rea_fetch,
             commands::plugin_rea::plugin_rea_guard,
+            commands::plugin_remotion::plugin_remotion_start,
+            commands::plugin_remotion::plugin_remotion_call,
+            commands::plugin_remotion::plugin_remotion_stop,
             commands::shell::shell_execute,
             commands::shell::shell_execute_cancel,
             // Filesystem

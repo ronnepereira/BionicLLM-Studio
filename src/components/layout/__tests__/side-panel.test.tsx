@@ -5,27 +5,36 @@ import { SidePanel } from '../SidePanel'
 import { useSidePanelStore } from '../../../stores/sidePanelStore'
 import { useBrowserStore } from '../../../stores/browserStore'
 
-vi.mock('../../browser/BrowserPanel', () => ({ BrowserPanel: ({ active }: { active: boolean }) => <div data-testid="browser-probe">{active ? 'visible' : 'hidden'}</div> }))
+vi.mock('../../browser/BrowserPanel', async importOriginal => ({
+  ...await importOriginal<typeof import('../../browser/BrowserPanel')>(),
+  BrowserPanel: ({ active }: { active: boolean }) => <div data-testid="browser-probe">{active ? 'visible' : 'hidden'}</div>,
+}))
 vi.mock('../../chat/ExplorerPanel', () => ({ ExplorerPanel: () => <div>Explorador preservado</div> }))
 vi.mock('../ReviewPanel', () => ({ ReviewPanel: () => <div>Revisão preservada</div> }))
 vi.mock('../TerminalPanel', () => ({ TerminalPanel: () => <div>Terminal preservado</div> }))
 beforeEach(() => {
   useSidePanelStore.setState({ open: false, active: null, visited: [], size: 50 })
-  useBrowserStore.setState({ open: false, ready: false, ownerToken: null })
+  useBrowserStore.setState({ open: false, ready: false, ownerToken: null, tabs: [], activeTab: null })
 })
 afterEach(cleanup)
 
-it('starts closed, opens at half width and keeps the file panel mounted across tabs', () => {
+it('shows only the selected tool and restores the menu when its tab is closed', () => {
   render(<SidePanel visible />)
   expect(screen.queryByRole('complementary', { name: 'Painel lateral' })).toBeNull()
-  act(() => useSidePanelStore.getState().show())
+  act(() => useSidePanelStore.getState().showMenu())
   expect(screen.getByRole('separator').getAttribute('aria-valuenow')).toBe('50')
-  fireEvent.click(screen.getByRole('tab', { name: 'Abrir arquivo' }))
+  expect(screen.queryByRole('tablist')).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Ocultar painel lateral' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: /^Abrir arquivo/ }))
   const explorer = screen.getByText('Explorador preservado')
-  fireEvent.click(screen.getByRole('tab', { name: 'Revisão' }))
-  expect(screen.getByText('Explorador preservado')).toBe(explorer)
-  expect(explorer.closest('[role="tabpanel"]')?.hasAttribute('hidden')).toBe(true)
-  expect(screen.getByRole('tabpanel', { name: 'Revisão' })).toBeTruthy()
+  expect(screen.getByRole('region', { name: 'Abrir arquivo' })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: /Revisão|Navegador|Terminal/ })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Fechar Abrir arquivo' }))
+  expect(explorer.closest('[role="region"]')?.hasAttribute('hidden')).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: /^Revisão/ }))
+  expect(screen.getByRole('region', { name: 'Revisão' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Fechar Revisão' }))
+  expect(screen.getByRole('button', { name: /^Terminal/ })).toBeTruthy()
 })
 
 it('AI/browser opening reveals the browser tab, hides the native view on other tabs or views and can close', () => {
@@ -33,27 +42,36 @@ it('AI/browser opening reveals the browser tab, hides the native view on other t
   act(() => useBrowserStore.getState().setOpen(true))
   expect(screen.getByRole('tab', { name: 'Navegador' }).getAttribute('aria-selected')).toBe('true')
   expect(screen.getByTestId('browser-probe').textContent).toBe('visible')
-  fireEvent.click(screen.getByRole('tab', { name: 'Revisão' }))
+  fireEvent.keyDown(window, { key: 'r', ctrlKey: true, altKey: true })
   expect(screen.getByTestId('browser-probe').textContent).toBe('hidden')
   act(() => useBrowserStore.getState().setOpen(true))
   view.rerender(<SidePanel visible={false} />)
   expect(screen.getByTestId('browser-probe').textContent).toBe('hidden')
   view.rerender(<SidePanel visible />)
-  fireEvent.click(screen.getByRole('button', { name: 'Ocultar painel lateral' }))
+  act(() => useSidePanelStore.getState().close())
   expect(useSidePanelStore.getState().open).toBe(false)
   expect(useBrowserStore.getState().ownerToken).toBeNull()
 })
 
-it('supports keyboard tab focus and deliberate activation', () => {
-  act(() => useSidePanelStore.getState().show('review'))
+it('keeps browser tabs independent and shows the menu only after the last is closed', () => {
+  act(() => useSidePanelStore.getState().showMenu())
   render(<SidePanel visible />)
-  const selected = screen.getByRole('tab', { name: 'Revisão' })
-  selected.focus()
-  fireEvent.keyDown(selected, { key: 'ArrowRight' })
-  expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Navegador' }))
-  expect(useSidePanelStore.getState().active).toBe('review')
-  fireEvent.click(document.activeElement!)
-  expect(useSidePanelStore.getState().active).toBe('browser')
+  fireEvent.click(screen.getByRole('button', { name: /^Navegador/ }))
+  const first = useBrowserStore.getState().activeTab
+  fireEvent.click(screen.getByRole('button', { name: 'Nova aba' }))
+  expect(useBrowserStore.getState().activeTab).not.toBe(first)
+  expect(screen.getAllByRole('tab')).toHaveLength(2)
+  expect(screen.queryByRole('button', { name: /^Revisão/ })).toBeNull()
+  const second = screen.getByRole('tab', { name: 'Nova aba 2' })
+  second.focus()
+  fireEvent.keyDown(second, { key: 'ArrowLeft' })
+  expect(useBrowserStore.getState().activeTab).toBe(first)
+  fireEvent.click(screen.getByRole('button', { name: 'Fechar Nova aba 1' }))
+  expect(screen.getByRole('tab', { name: 'Navegador' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Fechar Navegador' }))
+  expect(screen.queryByRole('tab')).toBeNull()
+  expect(screen.getByRole('button', { name: /^Revisão/ })).toBeTruthy()
+  expect(useSidePanelStore.getState().open).toBe(true)
 })
 
 it.each(['pointerup', 'pointercancel', 'lostpointercapture', 'missing-button'])('releases the shared resize handle after %s', type => {

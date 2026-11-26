@@ -1,4 +1,7 @@
 import { useUiText } from "../../lib/ui-text"
+import { chatModelReady } from '../../lib/chat-model-ready'
+import { ChatAttachment } from './ChatAttachment'
+import { MessageTimestamp } from './MessageTimestamp'
 import { localizeAgentNotice } from '../../lib/agent-notice-text'
 import { registerChatSender } from '../../lib/remote-chat-senders'
 import { composeFileMessage } from '../../lib/chat-files'
@@ -95,11 +98,10 @@ export function CodexView() {
     return () => window.removeEventListener('bionic:approve-code-plan', approve)
   }, [sendInstruction])
   // A message from the paired phone in a shared Code chat goes through this
-  // send path (lib/remote-chats-bridge). Code takes no pictures; files go in
-  // as the same file blocks the chat composer writes.
+  // send path (lib/remote-chats-bridge), including images and file blocks.
   useEffect(() => registerChatSender('code', {
-    send: async (content, _images, files) => {
-      await sendInstruction(files.length ? composeFileMessage(content, files.map((f) => f.attachment)) : content)
+    send: async (content, images, files) => {
+      await sendInstruction(files.length ? composeFileMessage(content, files.map((f) => f.attachment)) : content, { images })
     },
     stop: (convId) => stopCodex(convId),
   }), [sendInstruction, stopCodex])
@@ -478,6 +480,7 @@ export function CodexView() {
                       </div>
                     )}
                     <div className="min-w-0 max-w-[85%] space-y-0.5">
+                      {!!msg.images?.length && <div className="flex flex-wrap gap-2">{msg.images.map((image, index) => <ChatAttachment key={index} image={image} />)}</div>}
                       {/* Thinking */}
                       {msg.role === 'assistant' && msg.thinking && (
                         <ThinkingBlock
@@ -714,7 +717,7 @@ export function CodexView() {
                         )
                       })()}
                       {msg.role === 'assistant' && (
-                        <RequestUsageLine usage={msg.requestUsage} className="block px-1" />
+                        <div className="flex flex-wrap items-center gap-1"><MessageTimestamp timestamp={msg.timestamp} /><RequestUsageLine usage={msg.requestUsage} className="block px-1" /></div>
                       )}
                     </div>
                   </div>
@@ -766,9 +769,11 @@ export function CodexView() {
 
         {/* Input */}
         <ChatInput
-          // Images have no path into a coding run; attached files do, they
-          // are copied into the working folder (lib/chat-files.ts).
-          onSend={(content, _images, files) => sendInstruction(content, files ? { files, shownMode } : { shownMode })}
+          enableMessageQueue
+          modelReady={chatModelReady}
+          onSend={(content, images, files, _media, target) => sendInstruction(content, {
+            images, files, shownMode, ...(target && { ...target, queuedWorkingDirectory: codexWorkingDir }),
+          })}
           onStop={stopCodex}
           // Store flag, not the hook's local isRunning (audit A2): the view
           // remounts on every tab switch and a fresh hook says "idle" while

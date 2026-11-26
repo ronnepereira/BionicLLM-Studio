@@ -822,7 +822,8 @@ export function ChatView() {
 
           {/* Code mode brings its own composer (CodexView above). */}
           <ChatInput
-            onSend={sendMessage}
+            enableMessageQueue
+            onSend={(content, images, files, media, target) => sendMessage(content, images, files, media, target)}
             modelReady={chatModelReady}
             onStop={stopGeneration}
             isGenerating={busy.thisChat || queuedForLocalLane}

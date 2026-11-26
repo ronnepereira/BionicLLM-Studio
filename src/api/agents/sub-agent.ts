@@ -52,6 +52,9 @@ import { MAX_EXPLICIT_FANOUT } from '../../lib/agent-fanout'
 import { resolveApprovalLevel } from '../../lib/agent-approval-policy'
 import { allowedInReadOnlyTurn } from '../../lib/mutating-tools'
 import { isSettingsToolName } from '../../lib/settings-tool-names'
+import { STUDIO_AGENT_REPORT, parseStudioAgentReport, type StudioAgentSession } from './studio-team'
+import { SHELL_EXECUTE_DEFAULT_TIMEOUT_MS } from '../../lib/tool-timeout'
+import { compactMessages, estimateTokens, getChatWindowTokens } from '../../lib/context-compaction'
 
 // NOTE: the toolRegistry import is done LAZILY inside defaultSubAgentRunner
 // to avoid a circular dependency with src/api/mcp/builtin-tools.ts, which
@@ -253,7 +256,7 @@ export function _setDepth(n: number): void {
 export type SubAgentRunner = (
   goal: string,
   context: string,
-  options: { budget: AgentBudget; run?: AgentRunContext; taskId?: string; model?: string }
+  options: { budget: AgentBudget; run?: AgentRunContext; taskId?: string; model?: string; session?: StudioAgentSession }
 ) => Promise<string>
 
 /**
@@ -469,7 +472,7 @@ export async function buildSubAgentGates(run?: AgentRunContext): Promise<SubAgen
 export async function defaultSubAgentRunner(
   goal: string,
   context: string,
-  options: { budget: AgentBudget; run?: AgentRunContext; taskId?: string; model?: string }
+  options: { budget: AgentBudget; run?: AgentRunContext; taskId?: string; model?: string; session?: StudioAgentSession }
 ): Promise<string> {
   const { useModelStore } = await import('../../stores/modelStore')
   const { getProviderForModel } = await import('../providers')
@@ -512,6 +515,8 @@ export async function defaultSubAgentRunner(
     .getAll()
     // A sub-agent runs without the user watching: no settings changes (A11).
     .filter((t) => t.name !== DELEGATE_TASK_TOOL_DEF.name && !isSettingsToolName(t.name))
+    .filter((t) => !options.session || (!t.name.startsWith('studio_') && !['run_workflow', 'message_agent', 'check_tasks'].includes(t.name)))
+  if (options.session) tools.push(STUDIO_AGENT_REPORT)
 
   const llmTools = tools.map((t) => ({
     type: 'function' as const,
@@ -520,16 +525,27 @@ export async function defaultSubAgentRunner(
 
   // The sub-agent's own conversation, data this file writes, so it gets the
   // declared type `provider.chatWithTools` reads rather than a guard.
-  const messages: ChatMessage[] = [
+  const initialMessages: ChatMessage[] = [
     {
       role: 'system',
-      content: await inheritedSubAgentPrompt(laufmodell, options.run),
+      content: (await inheritedSubAgentPrompt(laufmodell, options.run)) + (options.session?.instructions
+        ? `\n\nCurrent saved-agent role and instructions:\n${options.session.instructions}\nUse studio_agent_report alone when this stage is verified, needs changes, or requires user input.` : ''),
     },
     {
       role: 'user',
       content: context ? `Goal: ${goal}\n\nContext:\n${context}` : `Goal: ${goal}`,
     },
   ]
+  const messages = options.session?.messages ?? initialMessages
+  if (options.session) {
+    if (!messages.length) messages.push(...initialMessages)
+    else messages.push({ role: 'user', content: options.session.lastBrief === context
+      ? 'Continue the same assigned work with the previous tool results. Finish with studio_agent_report when verified or genuinely blocked.'
+      : `Continue the shared goal with the same workspace and earlier tool results.\n${context}` })
+    options.session.lastBrief = context
+  }
+  const teamContextBudget = options.session
+    ? Math.max(2048, Math.floor((await getChatWindowTokens(laufmodell)) * 0.7) - estimateTokens(JSON.stringify(llmTools))) : 0
 
   // Approval + audit + Stop for every tool this sub-run fires (AGT-1).
   const gates = await buildSubAgentGates(options.run)
@@ -586,6 +602,10 @@ export async function defaultSubAgentRunner(
     // the user stopped, and that is paid compute the product promised would
     // not happen ("Stop means stop"). Threading the same signal the tool
     // gates already use into the request makes the abort reach the wire.
+    if (options.session) {
+      const compacted = compactMessages(messages, teamContextBudget) as ChatMessage[]
+      if (compacted !== messages) messages.splice(0, messages.length, ...compacted)
+    }
     const turn = await provider.chatWithTools(modelId, messages, llmTools, { signal: gates.abortSignal })
     // What a sub-agent returns becomes a TOOL RESULT in the parent's context,
     // so leaked reasoning floods the run it was supposed to shorten (2.6.7
@@ -606,9 +626,33 @@ export async function defaultSubAgentRunner(
         messages.push({ role: 'user', content: ANKUENDIGUNG_STEER })
         continue
       }
+      if (options.session) {
+        messages.push({ role: 'assistant', content: settled })
+        messages.push({ role: 'user', content: 'Continue the assigned work using tools. When finished call studio_agent_report with evidence, or blocked with the precise missing input. A prose promise is not completion.' })
+        options.session.stalled++
+        if (options.session.stalled >= 6) return 'Error: O agente respondeu sem executar nem apresentar um resultado verificável em seis tentativas.'
+        continue
+      }
       break
     }
     werkzeugGelaufen = true
+
+    if (options.session && turn.toolCalls.length === 1 && turn.toolCalls[0].function.name === STUDIO_AGENT_REPORT.name) {
+      try {
+        const raw = turn.toolCalls[0].function.arguments
+        options.session.report = parseStudioAgentReport(typeof raw === 'string' ? JSON.parse(raw) : raw)
+        // Keep a complete provider transcript when this agent is called again after review.
+        messages.push({ role: 'assistant', content: turn.content || '', tool_calls: turn.toolCalls })
+        messages.push({ role: 'tool', tool_call_id: turn.toolCalls[0].id, content: 'Stage report recorded and handed to the team.' })
+        return options.session.report.summary
+      } catch (error) {
+        messages.push({ role: 'assistant', content: turn.content || '', tool_calls: turn.toolCalls })
+        messages.push({ role: 'tool', tool_call_id: turn.toolCalls[0].id, content: `Error: ${String(error)}` })
+        options.session.stalled++
+        if (options.session.stalled >= 6) return 'Error: O agente repetiu um relatório inválido sem avançar.'
+        continue
+      }
+    }
 
     options.budget.addToolCalls(turn.toolCalls.length)
     if (tasks && options.taskId) {
@@ -638,9 +682,11 @@ export async function defaultSubAgentRunner(
       {
         getTool: (name) => registry.resolveExecutable(name),
         execute: (name: string, args: ToolArgs, callRun?: AgentRunContext) =>
-          isSettingsToolName(name)
+          options.session && !tools.some(t => t.name === name && name !== STUDIO_AGENT_REPORT.name)
+            ? Promise.resolve('Error: Tool unavailable in a team worker. Report your result separately with studio_agent_report.')
+          : isSettingsToolName(name)
             ? Promise.resolve('Error: a sub-agent cannot read or change the app settings. Nothing changed.')
-            : registry.execute(name, args, 1, callRun),
+            : registry.execute(name, name === 'shell_execute' && !args.timeout ? { ...args, timeout: SHELL_EXECUTE_DEFAULT_TIMEOUT_MS } : args, 1, callRun),
         explainError: (toolName, err) => explainToolError(toolName, err),
         // The three gates the nested loop used to run without.
         awaitApproval: gates.awaitApproval,
@@ -648,6 +694,14 @@ export async function defaultSubAgentRunner(
       },
       { abortSignal: gates.abortSignal },
     )
+    if (options.session) {
+      const action = JSON.stringify(turn.toolCalls.map(tc => ({ name: tc.function.name, args: tc.function.arguments })))
+      const failed = results.every(r => r.status !== 'completed' || toolResultIsFailure(r.result))
+      const repeated = options.session.lastAction === action
+      options.session.stalled = failed || repeated ? options.session.stalled + 1 : 0
+      options.session.lastAction = action
+      options.session.toolCalls += turn.toolCalls.length
+    }
 
     messages.push({ role: 'assistant', content: turn.content || '', tool_calls: turn.toolCalls })
     // Map each result back to its ORIGINATING call by index. executeParallel
@@ -679,6 +733,7 @@ export async function defaultSubAgentRunner(
     if (tasks && options.taskId) {
       tasks.getState().update(options.taskId, { messages: [...messages] })
     }
+    if (options.session && options.session.stalled >= 6) return 'Error: Seis etapas sem progresso: chamadas repetidas ou ferramentas falhando. Confira o acesso e os erros antes de continuar.'
   }
 
   return finalContent || '(sub-agent produced no final answer)'

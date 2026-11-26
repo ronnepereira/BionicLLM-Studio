@@ -8,6 +8,7 @@ use tauri::{AppHandle, WebviewWindow};
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BrowserRequest {
     action: String,
+    tab_id: Option<String>,
     url: Option<String>,
     path: Option<String>,
     chat_id: Option<String>,
@@ -37,6 +38,9 @@ fn checked_url(raw: &str) -> Result<String, String> {
 #[tauri::command]
 pub async fn studio_browser(window: WebviewWindow, app: AppHandle, mut request: BrowserRequest) -> Result<Value, String> {
     if window.label() != "main" { return Err("Este comando pertence à interface principal do aplicativo.".into()); }
+    if request.tab_id.as_ref().is_some_and(|id| uuid::Uuid::parse_str(id).is_err()) {
+        return Err("Identificador de aba inválido.".into());
+    }
     if request.action == "preview" {
         request.url = Some(super::browser_preview::open(request.path.as_deref().unwrap_or_default(), request.chat_id.as_deref(), request.working_directory.as_deref()).await?);
         request.action = "navigate".into();
@@ -51,7 +55,7 @@ pub async fn studio_browser(window: WebviewWindow, app: AppHandle, mut request: 
 #[cfg(target_os = "windows")]
 mod native {
     use super::*;
-    use std::{cell::{Cell, RefCell}, rc::Rc, time::Duration, sync::atomic::{AtomicU64, Ordering}};
+    use std::{cell::{Cell, RefCell}, collections::HashMap, rc::Rc, time::Duration, sync::atomic::{AtomicU64, Ordering}};
     use tauri::{Emitter, Manager};
     use tokio::sync::{oneshot, Mutex};
     use webview2_com::{Microsoft::Web::WebView2::Win32::*, CoTaskMemPWSTR, CreateCoreWebView2EnvironmentCompletedHandler, CreateCoreWebView2ControllerCompletedHandler, NavigationStartingEventHandler, NavigationCompletedEventHandler, SourceChangedEventHandler, DocumentTitleChangedEventHandler, NewWindowRequestedEventHandler, PermissionRequestedEventHandler, ExecuteScriptCompletedHandler, LaunchingExternalUriSchemeEventHandler, CallDevToolsProtocolMethodCompletedHandler, ClearBrowsingDataCompletedHandler};
@@ -65,16 +69,38 @@ mod native {
     impl Drop for BrowserHost {
         fn drop(&mut self) { unsafe { let _ = DestroyWindow(self.0); } }
     }
-    struct Browser { controller: ICoreWebView2Controller, page: ICoreWebView2, host: Rc<BrowserHost>, token: Option<String>, visible: bool }
-    thread_local! {
-        static BROWSER: RefCell<Option<Browser>> = const { RefCell::new(None) };
-        static REVISION: Cell<u64> = const { Cell::new(0) };
-        static LOADING: Cell<bool> = const { Cell::new(false) };
-        static FAILURE: RefCell<Option<String>> = const { RefCell::new(None) };
+    struct Browser {
+        controller: ICoreWebView2Controller,
+        page: ICoreWebView2,
+        host: Rc<BrowserHost>,
+        token: Option<String>,
+        visible: bool,
+        loading: bool,
+        failure: Option<String>,
     }
-    fn changed() {
-        REVISION.with(|revision| revision.set(revision.get().wrapping_add(1)));
-        BROWSER.with(|state| { if let Ok(mut state) = state.try_borrow_mut() { if let Some(browser) = state.as_mut() { browser.token = None; } } });
+    thread_local! {
+        static BROWSERS: RefCell<HashMap<String, Browser>> = RefCell::new(HashMap::new());
+        static ACTIVE_TAB: RefCell<Option<String>> = const { RefCell::new(None) };
+        static REVISION: Cell<u64> = const { Cell::new(0) };
+    }
+    fn is_active(id: &str) -> bool {
+        ACTIVE_TAB.with(|active| active.borrow().as_deref() == Some(id))
+    }
+    fn changed(id: &str) {
+        if is_active(id) {
+            REVISION.with(|revision| revision.set(revision.get().wrapping_add(1)));
+        }
+        BROWSERS.with(|state| {
+            if let Some(browser) = state.borrow_mut().get_mut(id) { browser.token = None; }
+        });
+    }
+    fn update_visibility(id: &str, visible: bool) {
+        BROWSERS.with(|state| {
+            if let Some(browser) = state.borrow_mut().get_mut(id) { browser.visible = visible; }
+        });
+    }
+    fn loading_state(id: &str) -> (bool, Option<String>) {
+        BROWSERS.with(|state| state.borrow().get(id).map(|browser| (browser.loading, browser.failure.clone())).unwrap_or_default())
     }
     fn error(error: impl std::fmt::Display) -> String { format!("Falha no navegador interno: {error}") }
     fn string(read: impl FnOnce(*mut PWSTR) -> windows::core::Result<()>) -> String {
@@ -82,15 +108,19 @@ mod native {
         if read(&mut value).is_err() { return String::new(); }
         CoTaskMemPWSTR::from(value).to_string()
     }
-    fn emit(app: &AppHandle, page: &ICoreWebView2, loading: bool, failure: Option<String>) {
-        LOADING.with(|state| state.set(loading));
-        FAILURE.with(|state| *state.borrow_mut() = failure.clone());
+    fn emit(app: &AppHandle, id: &str, page: &ICoreWebView2, loading: bool, failure: Option<String>) {
+        BROWSERS.with(|state| {
+            if let Some(browser) = state.borrow_mut().get_mut(id) {
+                browser.loading = loading;
+                browser.failure = failure.clone();
+            }
+        });
         let url = string(|value| unsafe { page.Source(value) });
         let title = string(|value| unsafe { page.DocumentTitle(value) });
         let mut back = windows::core::BOOL::default();
         let mut forward = windows::core::BOOL::default();
         unsafe { let _ = page.CanGoBack(&mut back); let _ = page.CanGoForward(&mut forward); }
-        let _ = app.emit_to("main", "studio-browser-state", json!({ "url": url, "title": title, "loading": loading, "canGoBack": back.as_bool(), "canGoForward": forward.as_bool(), "error": failure }));
+        let _ = app.emit_to("main", "studio-browser-state", json!({ "tabId": id, "url": url, "title": title, "loading": loading, "canGoBack": back.as_bool(), "canGoForward": forward.as_bool(), "error": failure }));
     }
     fn rect(bounds: &BrowserBounds, app: &AppHandle) -> Result<RECT, String> {
         let size = app.get_webview_window("main").ok_or("Janela principal indisponível.")?.inner_size().map_err(error)?;
@@ -109,7 +139,7 @@ mod native {
         ShowWindow(host.0, if visible { SW_SHOWNOACTIVATE } else { SW_HIDE });
         Ok(())
     }
-    unsafe fn configure(app: AppHandle, controller: ICoreWebView2Controller, bounds: RECT, host: Rc<BrowserHost>) -> Result<(), String> {
+    unsafe fn configure(app: AppHandle, id: &str, controller: ICoreWebView2Controller, bounds: RECT, host: Rc<BrowserHost>) -> Result<(), String> {
         let page = controller.CoreWebView2().map_err(error)?;
         let settings = page.Settings().map_err(error)?;
         settings.SetIsWebMessageEnabled(false).map_err(error)?;
@@ -125,31 +155,44 @@ mod native {
         let init = CoTaskMemPWSTR::from("for (const type of ['pointerdown','keydown']) addEventListener(type, event => { if(event.isTrusted) delete window.__bionicBrowserSnapshot }, true)");
         page.AddScriptToExecuteOnDocumentCreated(*init.as_ref().as_pcwstr(), None).map_err(error)?;
         let handle = app.clone();
+        let tab = id.to_owned();
         page.add_NavigationStarting(&NavigationStartingEventHandler::create(Box::new(move |page, args| {
-            changed();
+            changed(&tab);
             if let (Some(page), Some(args)) = (page, args) {
                 let url = string(|value| args.Uri(value));
-                if url != "about:blank" && checked_url(&url).is_err() { args.SetCancel(true)?; emit(&handle, &page, false, Some("Este tipo de endereço não pode ser aberto no navegador interno.".into())); }
-                else { emit(&handle, &page, true, None); }
+                if url != "about:blank" && checked_url(&url).is_err() { args.SetCancel(true)?; emit(&handle, &tab, &page, false, Some("Este tipo de endereço não pode ser aberto no navegador interno.".into())); }
+                else { emit(&handle, &tab, &page, true, None); }
             }
             Ok(())
         })), &mut event_token).map_err(error)?;
         let handle = app.clone();
+        let tab = id.to_owned();
         page.add_NavigationCompleted(&NavigationCompletedEventHandler::create(Box::new(move |page, args| {
             if let Some(page) = page {
                 let mut success = windows::core::BOOL::default();
                 if let Some(args) = args { args.IsSuccess(&mut success)?; }
-                emit(&handle, &page, false, if success.as_bool() { None } else { Some("Não foi possível carregar este site. Confira o endereço e a conexão.".into()) });
+                emit(&handle, &tab, &page, false, if success.as_bool() { None } else { Some("Não foi possível carregar este site. Confira o endereço e a conexão.".into()) });
             }
             Ok(())
         })), &mut event_token).map_err(error)?;
         let handle = app.clone();
+        let tab = id.to_owned();
         page.add_SourceChanged(&SourceChangedEventHandler::create(Box::new(move |page, _| {
-            changed(); if let Some(page) = page { emit(&handle, &page, LOADING.with(Cell::get), FAILURE.with(|state| state.borrow().clone())); } Ok(())
+            changed(&tab);
+            if let Some(page) = page {
+                let (loading, failure) = loading_state(&tab);
+                emit(&handle, &tab, &page, loading, failure);
+            }
+            Ok(())
         })), &mut event_token).map_err(error)?;
         let handle = app.clone();
+        let tab = id.to_owned();
         page.add_DocumentTitleChanged(&DocumentTitleChangedEventHandler::create(Box::new(move |page, _| {
-            if let Some(page) = page { emit(&handle, &page, LOADING.with(Cell::get), FAILURE.with(|state| state.borrow().clone())); } Ok(())
+            if let Some(page) = page {
+                let (loading, failure) = loading_state(&tab);
+                emit(&handle, &tab, &page, loading, failure);
+            }
+            Ok(())
         })), &mut event_token).map_err(error)?;
         // target=_blank remains inside this same controller; never launch an external app.
         page.add_NewWindowRequested(&NewWindowRequestedEventHandler::create(Box::new(move |page, args| {
@@ -164,11 +207,11 @@ mod native {
         page.add_PermissionRequested(&PermissionRequestedEventHandler::create(Box::new(move |_, args| {
             if let Some(args) = args { args.SetState(COREWEBVIEW2_PERMISSION_STATE_DEFAULT)?; } Ok(())
         })), &mut event_token).map_err(error)?;
-        BROWSER.with(|state| *state.borrow_mut() = Some(Browser { controller, page, host, token: None, visible: false }));
+        BROWSERS.with(|state| state.borrow_mut().insert(id.to_owned(), Browser { controller, page, host, token: None, visible: false, loading: false, failure: None }));
         Ok(())
     }
 
-    fn create(app: AppHandle, request: BrowserRequest, reply: Reply) {
+    fn create(app: AppHandle, id: String, request: BrowserRequest, reply: Reply) {
         let epoch = STOP_EPOCH.load(Ordering::SeqCst);
         let pending = Rc::new(RefCell::new(Some(reply)));
         let response = pending.clone();
@@ -190,6 +233,7 @@ mod native {
             let handler = CreateCoreWebView2EnvironmentCompletedHandler::create(Box::new(move |status, environment| {
                 let response = response.clone();
                 let host = host.clone();
+                let id = id.clone();
                 let result = (|| -> Result<(), String> {
                     status.map_err(error)?;
                     let environment = environment.ok_or("WebView2 indisponível. Instale o Microsoft Edge WebView2 Runtime.")?;
@@ -198,9 +242,9 @@ mod native {
                         let result = (|| -> Result<Value, String> {
                             status.map_err(error)?;
                             let controller = controller.ok_or("Não foi possível criar o navegador interno.")?;
-                            if STOP_EPOCH.load(Ordering::SeqCst) != epoch || complete.borrow().as_ref().is_none_or(|reply| reply.is_closed()) { unsafe { let _ = controller.Close(); } return Err("A abertura do navegador foi cancelada.".into()); }
+                            if !is_active(&id) || STOP_EPOCH.load(Ordering::SeqCst) != epoch || complete.borrow().as_ref().is_none_or(|reply| reply.is_closed()) { unsafe { let _ = controller.Close(); } return Err("A abertura do navegador foi cancelada.".into()); }
                             let cleanup = controller.clone();
-                            if let Err(failure) = unsafe { configure(app.clone(), controller, bounds, host.clone()) } {
+                            if let Err(failure) = unsafe { configure(app.clone(), &id, controller, bounds, host.clone()) } {
                                 unsafe { let _ = cleanup.Close(); }
                                 return Err(failure);
                             }
@@ -314,10 +358,52 @@ mod native {
             if let Some(reply) = response.borrow_mut().take() { let _ = reply.send(Err(error(failure))); }
         }
     }
+    fn hide_tab(id: &str) -> Result<(), String> {
+        changed(id);
+        let view = BROWSERS.with(|state| state.borrow().get(id).map(|tab| (tab.controller.clone(), tab.host.clone())));
+        if let Some((controller, host)) = view {
+            unsafe {
+                ShowWindow(host.0, SW_HIDE);
+                controller.SetIsVisible(false).map_err(error)?;
+            }
+            update_visibility(id, false);
+        }
+        if is_active(id) { ACTIVE_TAB.with(|active| active.borrow_mut().take()); }
+        Ok(())
+    }
+
     fn dispatch(app: AppHandle, request: BrowserRequest, reply: Reply) {
-        if request.action == "open" && BROWSER.with(|state| state.borrow().is_none()) { create(app, request, reply); return; }
-        let result = BROWSER.with(|state| -> Result<(ICoreWebView2Controller, ICoreWebView2, Rc<BrowserHost>, Option<String>, bool), String> {
-            let browser = state.borrow(); let browser = browser.as_ref().ok_or("Abra o navegador interno primeiro.")?;
+        let id = request.tab_id.clone()
+            .or_else(|| ACTIVE_TAB.with(|active| active.borrow().clone()))
+            .unwrap_or_else(|| "legacy".to_owned());
+        if request.action == "hide" {
+            let _ = reply.send(hide_tab(&id).map(|()| json!({ "ok": true })));
+            return;
+        }
+        if matches!(request.action.as_str(), "close" | "close_tab") {
+            let result = hide_tab(&id).and_then(|()| {
+                let tab = BROWSERS.with(|state| state.borrow_mut().remove(&id));
+                if let Some(tab) = tab { unsafe { tab.controller.Close().map_err(error)?; } }
+                Ok(json!({ "ok": true }))
+            });
+            let _ = reply.send(result);
+            return;
+        }
+        if request.action == "open" {
+            let previous = ACTIVE_TAB.with(|active| active.borrow().clone());
+            if let Some(previous) = previous.filter(|previous| previous != &id) {
+                if let Err(error) = hide_tab(&previous) { let _ = reply.send(Err(error)); return; }
+            }
+            ACTIVE_TAB.with(|active| *active.borrow_mut() = Some(id.clone()));
+            if !BROWSERS.with(|state| state.borrow().contains_key(&id)) { create(app, id, request, reply); return; }
+        }
+        if !is_active(&id) {
+            let _ = reply.send(Err("A aba do navegador mudou ou foi ocultada.".into()));
+            return;
+        }
+        let result = BROWSERS.with(|state| -> Result<(ICoreWebView2Controller, ICoreWebView2, Rc<BrowserHost>, Option<String>, bool), String> {
+            let state = state.borrow();
+            let browser = state.get(&id).ok_or("Abra o navegador interno primeiro.")?;
             Ok((browser.controller.clone(), browser.page.clone(), browser.host.clone(), browser.token.clone(), browser.visible))
         });
         let (controller, page, host, token, visible) = match result { Ok(result) => result, Err(error) => { let _ = reply.send(Err(error)); return; } };
@@ -336,7 +422,7 @@ mod native {
                 if request.text.as_ref().is_some_and(|text| text.len() > 32_000) { return Err("Texto muito longo para o campo do navegador.".into()); }
                 if matches!(request.action.as_str(), "type" | "select") && request.text.is_none() { return Err("Informe o texto ou a opção do campo.".into()); }
                 if request.x.unwrap_or(0).abs_diff(0) > 10000 || request.y.unwrap_or(0).abs_diff(0) > 10000 { return Err("Rolagem fora do limite permitido.".into()); }
-                BROWSER.with(|state| { if let Some(browser) = state.borrow_mut().as_mut() { browser.token = if request.action == "read" { Some(current.clone()) } else { None }; } });
+                BROWSERS.with(|state| { if let Some(browser) = state.borrow_mut().get_mut(&id) { browser.token = if request.action == "read" { Some(current.clone()) } else { None }; } });
                 let args = json!({ "action": request.action, "token": current, "target": request.target, "text": request.text, "x": request.x, "y": request.y });
                 Ok(format!("({})({args})", include_str!("../../resources/browser-page.js")))
             })();
@@ -344,7 +430,7 @@ mod native {
             return;
         }
         if request.action == "clear_cache" {
-            changed();
+            changed(&id);
             let response = Rc::new(RefCell::new(Some(reply)));
             let callback_response = response.clone();
             let callback = ClearBrowsingDataCompletedHandler::create(Box::new(move |status| {
@@ -374,15 +460,17 @@ mod native {
                         let source = string(|value| page.Source(value));
                         let has_page = visible || (!source.is_empty() && source != "about:blank");
                         layout(&host, &controller, bounds, has_page)?;
-                        BROWSER.with(|state| { if let Some(browser) = state.borrow_mut().as_mut() { browser.visible = has_page; } });
+                        update_visibility(&id, has_page);
+                        if request.action == "open" {
+                            let (loading, failure) = loading_state(&id);
+                            emit(&app, &id, &page, loading, failure);
+                        }
                     },
-                    "navigate" => { let url = checked_url(request.url.as_deref().unwrap_or_default())?; changed(); controller.SetIsVisible(true).map_err(error)?; ShowWindow(host.0, SW_SHOWNOACTIVATE); BROWSER.with(|state| { if let Some(browser) = state.borrow_mut().as_mut() { browser.visible = true; } }); let url = CoTaskMemPWSTR::from(url.as_str()); page.Navigate(*url.as_ref().as_pcwstr()).map_err(error)?; },
-                    "back" => { changed(); page.GoBack().map_err(error)?; },
-                    "forward" => { changed(); page.GoForward().map_err(error)?; },
-                    "reload" => { changed(); page.Reload().map_err(error)?; },
-                    "stop" => { changed(); page.Stop().map_err(error)?; emit(&app, &page, false, None); },
-                    "hide" => { changed(); controller.SetIsVisible(false).map_err(error)?; ShowWindow(host.0, SW_HIDE); BROWSER.with(|state| { if let Some(browser) = state.borrow_mut().as_mut() { browser.visible = false; browser.token = None; } }); },
-                    "close" => { changed(); controller.Close().map_err(error)?; BROWSER.with(|state| *state.borrow_mut() = None); },
+                    "navigate" => { let url = checked_url(request.url.as_deref().unwrap_or_default())?; changed(&id); controller.SetIsVisible(true).map_err(error)?; ShowWindow(host.0, SW_SHOWNOACTIVATE); update_visibility(&id, true); let url = CoTaskMemPWSTR::from(url.as_str()); page.Navigate(*url.as_ref().as_pcwstr()).map_err(error)?; },
+                    "back" => { changed(&id); page.GoBack().map_err(error)?; },
+                    "forward" => { changed(&id); page.GoForward().map_err(error)?; },
+                    "reload" => { changed(&id); page.Reload().map_err(error)?; },
+                    "stop" => { changed(&id); page.Stop().map_err(error)?; emit(&app, &id, &page, false, None); },
                     _ => return Err("Ação de navegador inválida.".into()),
                 }
             }
@@ -391,13 +479,20 @@ mod native {
         let _ = reply.send(result);
     }
     pub async fn command(app: AppHandle, request: BrowserRequest) -> Result<Value, String> {
-        let urgent = matches!(request.action.as_str(), "stop" | "hide" | "close");
-        let epoch = if urgent { STOP_EPOCH.fetch_add(1, Ordering::SeqCst) + 1 } else { STOP_EPOCH.load(Ordering::SeqCst) };
+        let interrupts = matches!(request.action.as_str(), "stop" | "hide" | "close");
+        let urgent = interrupts || request.action == "close_tab";
+        let epoch = if interrupts { STOP_EPOCH.fetch_add(1, Ordering::SeqCst) + 1 } else { STOP_EPOCH.load(Ordering::SeqCst) };
         let _serial = if urgent { None } else { Some(SERIAL.lock().await) };
-        if STOP_EPOCH.load(Ordering::SeqCst) != epoch { return Err("A operação foi cancelada antes de iniciar.".into()); }
+        if !urgent && STOP_EPOCH.load(Ordering::SeqCst) != epoch { return Err("A operação foi cancelada antes de iniciar.".into()); }
         let (reply, response) = oneshot::channel();
         let handle = app.clone();
-        app.run_on_main_thread(move || dispatch(handle, request, reply)).map_err(error)?;
+        app.run_on_main_thread(move || {
+            if !urgent && STOP_EPOCH.load(Ordering::SeqCst) != epoch {
+                let _ = reply.send(Err("A operação foi cancelada antes de iniciar.".into()));
+            } else {
+                dispatch(handle, request, reply);
+            }
+        }).map_err(error)?;
         tokio::time::timeout(Duration::from_secs(25), response).await.map_err(|_| "O navegador não respondeu a tempo. Tente novamente.")?.map_err(|_| "O navegador foi encerrado.")?
     }
 }

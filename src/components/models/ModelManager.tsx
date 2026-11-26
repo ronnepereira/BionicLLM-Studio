@@ -12,6 +12,7 @@ import { useModelStore } from '../../stores/modelStore'
 import { useUIStore } from '../../stores/uiStore'
 import { useProviderStore } from '../../stores/providerStore'
 import { ModelCard } from './ModelCard'
+import { assignFamilies, groupByFamily } from '../../lib/model-family'
 import { RemoveRefusalsDialog } from './RemoveRefusalsDialog'
 import { useAbliterateStore } from '../../stores/abliterateStore'
 import { prefixModelName } from '../../api/providers/model-name'
@@ -273,6 +274,7 @@ export function ModelManager() {
   const loraModels = models.filter((m: AIModel) => isLoraRow(m))
   const loraRows: LoraRow[] = loraModels.map((m) => ({ name: m.name, size: m.size ?? 0 }))
   const filteredModels = models.filter((m: AIModel) => m.type === mode && !isLoraRow(m))
+  const installedFamilies = assignFamilies(filteredModels.map(model => model.name))
   const modeMeta = RAIL_ITEMS.find(r => r.key === mode)!
   /** What the Installed counter and the Installed view are about right now. */
   const installedCount = showMacLoras
@@ -507,7 +509,11 @@ export function ModelManager() {
                                   {label}
                                 </p>
                               )}
-                              {(rows as unknown as AIModel[]).map((model) => {
+                              {groupByFamily((rows as unknown as AIModel[]).map(model => ({ model, family: installedFamilies.get(model.name) ?? 'Other' }))).map(({ family, rows: familyRows }) => (
+                                <details key={family} open={searchQuery.trim() ? true : undefined} className="rounded-lg border border-gray-200 dark:border-white/10">
+                                  <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200">{family === 'Other' ? uiText('Other') : family} <span className="text-gray-500">({familyRows.length})</span></summary>
+                                  <div className="space-y-1.5 px-2 pb-2">
+                              {familyRows.map(({ model }) => {
                                 const i = drawn++
                                 return (
                           <motion.div
@@ -561,6 +567,9 @@ export function ModelManager() {
                           </motion.div>
                                 )
                               })}
+                                  </div>
+                                </details>
+                              ))}
                             </div>
                           ))
                         })()}

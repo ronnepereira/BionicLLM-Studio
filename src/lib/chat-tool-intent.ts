@@ -1,4 +1,5 @@
 import { asksForStudioManagement, STUDIO_TOOL_NAMES } from './studio-capabilities'
+import { asksForRemotion, remotionRoutingText, REMOTION_TOOL_NAMES } from './plugins/remotion-tools'
 /**
  * Curated tools in PLAIN chat (2026-06-11: "web search web fetch file
  * write und image und video mcp sollen auch im normalen chat funktionieren").
@@ -22,6 +23,7 @@ import { asksForStudioManagement, STUDIO_TOOL_NAMES } from './studio-capabilitie
 import { BROWSER_TOOL_NAMES, asksForInternalBrowser, hasBrowserInteraction, browserRoutingText } from './browser-intent'
 
 export const CHAT_TOOLS = [
+  ...REMOTION_TOOL_NAMES,
   ...STUDIO_TOOL_NAMES,
   'conversation_search',
   ...BROWSER_TOOL_NAMES,
@@ -32,7 +34,7 @@ export const CHAT_TOOLS = [
   'video_generate',
 ] as const
 
-export type ChatToolCapability = 'image' | 'video' | 'web' | 'file' | 'app'
+export type ChatToolCapability = 'image' | 'video' | 'web' | 'file' | 'app' | 'remotion'
 
 /**
  * Umlaute und Eszett auf ihre Ersatzschreibung bringen, BEVOR irgendein Muster
@@ -152,6 +154,7 @@ function withoutMentionedNames(t: string): string {
 export function detectChatToolCapability(text: string, hasImages = false): ChatToolCapability | null {
   const t = lower(text).trim()
   if (!t) return null
+  if (asksForRemotion(t)) return 'remotion'
   if (asksForStudioManagement(t)) return 'app'
   if (asksForInternalBrowser(t)) return 'web'
 
@@ -270,6 +273,7 @@ export function resolveChatToolRoute(
   hasImages: boolean,
   recent: ChatToolRouteMsg[],
 ): ChatToolRoute | null {
+  if (remotionRoutingText(text, recent) !== text) return { capability: 'remotion' }
   const direct = detectChatToolCapability(text, hasImages)
   if (direct) {
     return direct === 'image' || direct === 'video'
@@ -278,9 +282,9 @@ export function resolveChatToolRoute(
   }
   const nativeRequest = recent.slice(-8).some(message => message.role === 'user' && asksForStudioManagement(message.content))
   const lastAssistant = [...recent].reverse().find(message => message.role === 'assistant')?.content ?? ''
-  const pendingNativeDetails = nativeRequest && /[?？]/.test(lastAssistant) && /agente|agent|agenda|timer|hor[aá]rio|nome|tarefa|objetivo|frequ[eê]ncia|instructions|schedule|timezone/i.test(lastAssistant)
+  const pendingNativeDetails = nativeRequest && /[?？]/.test(lastAssistant) && /agente|agent|agenda|timer|hor[aá]rio|nome|tarefa|objetivo|frequ[eê]ncia|instructions|schedule|timezone|pasta|projeto|arquivo|caminho|acesso|permiss|workspace|folder|path|project/i.test(lastAssistant)
   const endsNativeRequest = /^(obrigad[oa]|valeu|thanks|thank you|cancele|cancel|pare|stop|esque[cç]a|forget it)[.!\s]*$/i.test(text.trim())
-  if (nativeRequest && !endsNativeRequest && (pendingNativeDetails || /\b(timer|agend\w*|minutos?|horas?|a cada|every|schedule|nome|chame|sim|pode|confirmo|yes|ok|continue|prossiga)\b/i.test(text))) return { capability: 'app' }
+  if (nativeRequest && !endsNativeRequest && (pendingNativeDetails || /\b(timer|agend\w*|minutos?|horas?|a cada|every|schedule|nome|chame|sim|pode|confirmo|yes|ok|continue|prossiga|execute|executar|rode|inicie|remova|exclua|apague|remover)\b/i.test(text))) return { capability: 'app' }
   if (hasBrowserInteraction(text) && recent.slice(-12).some(message => message.role === 'user' && asksForInternalBrowser(message.content))) return { capability: 'web' }
   if (browserRoutingText(text, recent.filter(message => message.role === 'user').map(message => message.content)) !== text) return { capability: 'web' }
   if (!isMediaContinuation(text)) return null
@@ -299,4 +303,11 @@ export function resolveChatToolRoute(
     }
   }
   return null
+}
+
+/** Keep native task tools pinned after a clarification such as "Sumaré-SP". */
+export function studioToolRoutingText(text: string, recent: ChatToolRouteMsg[]): string {
+  return resolveChatToolRoute(text, false, recent)?.capability === 'app'
+    ? `${text}\n\nNative app task tools: ${STUDIO_TOOL_NAMES.join(', ')}`
+    : text
 }

@@ -91,7 +91,7 @@ describe('system prompt', () => {
       // Argument, wie im Web.
       // GH #170: the chat's persona comes through withChatPersona, the same
       // resolution the Plugins menu shows.
-      expect(read(file)).toContain('buildChatSystemPrompt(withChatPersona(conv, personas, activePersonaId), settings.personasEnabled !== false, useSkillStore.getState().skills, settings)')
+      expect(read(file)).toContain('buildChatSystemPrompt(withChatPersona(conv, personas, activePersonaId), settings.personasEnabled !== false, useSkillStore.getState().skills, settings, await skillBudgetForModel(activeModel))')
     }
   })
 

@@ -4,6 +4,11 @@ import { nextOccurrence, readSchedules, scheduleInput, scheduleDestination, type
 import type { StudioAgentProfile } from '../lib/agent-profiles'
 
 export const SCHEDULE_KEY = 'bionic-schedules-v1'
+// The profile store registers its own deletion, keeping this module independent.
+let removeLinkedProfile: (agentId: string) => void = () => {}
+export function registerScheduledProfileRemoval(remove: (agentId: string) => void): void {
+  removeLinkedProfile = remove
+}
 interface ScheduleState {
   items: StudioSchedule[]
   error: string | null
@@ -50,10 +55,16 @@ export const useScheduleStore = create<ScheduleState>((set) => ({
     return { ...item, enabled: true, nextAt, status: 'ready', cancelRequested: false }
   })),
   cancel: id => changeSchedules(items => items.map(item => item.id === id ? { ...item, enabled: false, cancelRequested: item.status === 'running' } : item)),
-  remove: id => changeSchedules(items => {
-    if (items.some(item => item.id === id && item.status === 'running')) throw new Error('Cancele a execução antes de remover o agendamento.')
-    return items.filter(item => item.id !== id)
-  }),
+  remove: async id => {
+    let agentId: string | undefined
+    await changeSchedules(items => {
+      agentId = items.find(item => item.id === id)?.agent.id
+      // As with deleting a profile, removing its schedules cancels live runs.
+      return agentId ? items.filter(item => item.agent.id !== agentId) : items
+    })
+    // Only remove the profile after the durable schedule write succeeded.
+    if (agentId) removeLinkedProfile(agentId)
+  },
 }))
 
 /** All windows and both UI/runtime mutate under one lock, from fresh durable data.

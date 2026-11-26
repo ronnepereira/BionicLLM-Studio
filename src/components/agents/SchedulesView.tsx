@@ -157,7 +157,8 @@ export function SchedulesView() {
           if (!useChatStore.getState().conversations.some(c => c.id === item.conversationId)) { setError(text('This conversation has been removed.')); return }
           useChatStore.getState().setActiveConversation(item.conversationId!); setView('chat')
         }}><MessageSquare size={14} />{text('Open conversation')}</button>}
-        {item.status !== 'running' && <button disabled={busy} className={button} onClick={() => removing === item.id ? void act(async () => { await remove(item.id); setRemoving(null) }) : setRemoving(item.id)} aria-label={text('Remove {v0}', { v0: item.name })}><Trash2 size={14} />{removing === item.id ? text('Confirm removal') : text('Remove')}</button>}
+        {item.status !== 'running' && <button disabled={busy} className={button} onClick={() => removing === item.id ? void act(async () => { await remove(item.id); setRemoving(null) }) : setRemoving(item.id)} aria-label={text('Remove {v0}', { v0: item.name })}><Trash2 size={14} />{removing === item.id ? 'Confirmar exclusão do agente e agendas' : text('Remove')}</button>}
+        {removing === item.id && <p className="text-xs text-gray-500">O agente associado e todas as suas agendas serão excluídos. As conversas serão preservadas.</p>}
         {removing === item.id && <button className={button} onClick={() => setRemoving(null)}>{text('Cancel')}</button>}
       </div>
     </article>)}</div>

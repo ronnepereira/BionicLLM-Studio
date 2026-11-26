@@ -19,6 +19,8 @@ const session = vi.hoisted(() => ({
   setVoiceMuted: vi.fn(),
 }))
 vi.mock('../../../api/voice-session', () => session)
+const listen = vi.hoisted(() => vi.fn())
+vi.mock('@tauri-apps/api/event', async (importOriginal) => ({ ...await importOriginal<typeof import('@tauri-apps/api/event')>(), listen }))
 
 import { VoiceSetupPanel } from '../VoiceSetupPanel'
 import { VoiceSessionPanel } from '../VoiceSessionPanel'
@@ -226,46 +228,26 @@ describe('VoiceSessionPanel', () => {
     expect(document.activeElement).not.toBe(view.getByRole('button', { name: 'Stop voice' }))
   })
 
-  it('live: shows both sides of the talk, the state, mute and stop', () => {
+  it('keeps the full size avatar through spoken turns and leaves the transcript to Chat', () => {
     const view = render(createElement(VoiceSessionPanel))
-    send(...live(), { type: 'user-text', text: 'What time is it?', final: true }, { type: 'bot-thinking' })
+    const avatar = view.getByTestId('voice-hologram')
+    const fullSize = avatar.className
+    send(...live(), { type: 'thought-text', text: 'Private reasoning content' })
+    send({ type: 'user-text', text: 'What time is it?', final: true }, { type: 'bot-thinking' })
     expect(view.getByTestId('voice-status').textContent).toBe('Thinking')
     send({ type: 'bot-text', text: 'It is ten past four.' }, { type: 'bot-speaking' })
     expect(view.getByTestId('voice-status').textContent).toBe('Speaking')
     expect(view.getByTestId('voice-waves').getAttribute('data-mood')).toBe('speaking')
-    const lines = [...view.container.querySelectorAll('[data-role]')].map((node) => `${node.getAttribute('data-role')}: ${node.textContent}`)
-    expect(lines).toEqual(['user: What time is it?', 'assistant: It is ten past four.'])
+    expect(view.getByTestId('voice-hologram')).toBe(avatar)
+    expect(avatar.className).toBe(fullSize)
+    expect(view.queryByRole('list', { name: 'Transcript' })).toBeNull()
+    expect(view.queryByText('What time is it?')).toBeNull()
+    expect(view.queryByText('It is ten past four.')).toBeNull()
+    expect(view.queryByText('Private reasoning content')).toBeNull()
     fireEvent.click(view.getByRole('button', { name: 'Mute microphone' }))
     expect(session.setVoiceMuted).toHaveBeenCalledWith(true)
     fireEvent.click(view.getByRole('button', { name: 'Stop voice' }))
     expect(session.stopVoiceSession).toHaveBeenCalledTimes(1)
-  })
-
-  it('a thought is the folded Thinking block of the chat with its duration, never a line of raw text', () => {
-    const view = render(createElement(VoiceSessionPanel))
-    send(...live(), { type: 'user-text', text: 'Why is the sky blue?', final: true }, { type: 'thought-text', text: 'The user asks about Rayleigh scattering.' })
-    const thought = view.container.querySelector('[data-role="thought"]')!
-    // While it runs: the header of the chat, and a bounded peek.
-    expect(within(thought as HTMLElement).getByRole('button', { name: 'Toggle thinking details' }).textContent).toBe('Thinking')
-    send({ type: 'thought-end', secs: 2.6 }, { type: 'bot-text', text: 'Because air scatters blue light most.' })
-    const header = within(thought as HTMLElement).getByRole('button', { name: 'Toggle thinking details' })
-    expect(header.textContent).toBe('Thought for 3 s')
-    // Folded: the thought itself is not on the surface until the user opens it.
-    expect(thought.textContent).not.toContain('Rayleigh')
-    expect(view.container.textContent).not.toContain('<think>')
-    fireEvent.click(header)
-    expect(thought.textContent).toContain('Rayleigh scattering')
-    const roles = [...view.container.querySelectorAll('[data-role]')].map((node) => node.getAttribute('data-role'))
-    expect(roles).toEqual(['user', 'thought', 'assistant'])
-  })
-
-  it('the transcript is there from the start, hidden while it is empty, so its scroll position is always watched', () => {
-    const view = render(createElement(VoiceSessionPanel))
-    const transcript = view.getByTestId('voice-transcript')
-    expect(transcript.className).toContain('hidden')
-    send(...live(), { type: 'user-text', text: 'Hello.', final: true })
-    expect(view.getByTestId('voice-transcript')).toBe(transcript)
-    expect(transcript.className).not.toContain('hidden')
   })
 
   it('approval: the strip of the chat, asking in plain words, answered once per click or key', () => {
@@ -292,63 +274,13 @@ describe('VoiceSessionPanel', () => {
     expect(session.answerVoiceApproval).toHaveBeenCalledTimes(3)
   })
 
-  it('approval: the waiting call is the open tool block of the chat, with what it would write and its own two buttons', () => {
-    const view = render(createElement(VoiceSessionPanel))
-    send(...live(), { type: 'tool-waiting', id: 'call-1', name: 'file_write', args: { path: 'lists/shopping.txt', content: 'milk' } })
-    const block = view.getByRole('group', { name: 'Tools' }).querySelector('[data-tool="file_write"]') as HTMLElement
-    expect(block.getAttribute('data-status')).toBe('pending_approval')
-    // File tools now show the compact code preview before the raw arguments.
-    expect(block.querySelector('pre')?.textContent).toContain('milk')
-    fireEvent.click(within(block).getByRole('button', { name: 'Reject' }))
-    expect(session.answerVoiceApproval).toHaveBeenLastCalledWith(false)
-    fireEvent.click(within(block).getByRole('button', { name: 'Approve' }))
-    expect(session.answerVoiceApproval).toHaveBeenLastCalledWith(true)
-    expect(session.answerVoiceApproval).toHaveBeenCalledTimes(2)
-  })
-
-  it('a running tool is the tool block of the chat, and a finished one says how it ended', () => {
+  it('shows the running tool status without rendering the tool timeline', () => {
     const view = render(createElement(VoiceSessionPanel))
     send(...live(), { type: 'tool-running', id: 'call-1', name: 'web_search' })
-    // Plain words in the status line. The technical name stays out of it.
     expect(view.getByTestId('voice-status').textContent).toBe('Searching')
-    const block = () => view.getByRole('group', { name: 'Tools' }).querySelector('[data-tool="web_search"]') as HTMLElement
-    expect(block().getAttribute('data-status')).toBe('running')
-    // The look of the chat: the name in the shimmer, the three dots.
-    expect(block().querySelector('.lu-tool-shimmer')?.textContent).toBe('web_search')
-    expect(block().querySelectorAll('.lu-band-dot')).toHaveLength(3)
+    expect(view.queryByRole('group', { name: 'Tools' })).toBeNull()
     send({ type: 'tool-done', id: 'call-1', status: 'failed', result: 'No connection.', durationMs: 1200 })
-    expect(block().getAttribute('data-status')).toBe('failed')
-    expect(block().textContent).toContain('1.2s')
-    expect(block().querySelector('.lu-tool-shimmer')).toBeNull()
-    // Closed until it is opened, as in the chat.
-    expect(block().textContent).not.toContain('No connection.')
-    fireEvent.click(within(block()).getByRole('button'))
-    expect(block().textContent).toContain('No connection.')
-  })
-
-  it('tool calls stand where they happened, and calls in a row fold into one band', () => {
-    const view = render(createElement(VoiceSessionPanel))
-    send(
-      ...live(),
-      { type: 'user-text', text: 'Save my list.', final: true },
-      { type: 'tool-running', id: 'call-1', name: 'file_write', args: { path: 'shopping.txt', content: 'milk\nbread' } },
-      { type: 'tool-done', id: 'call-1', status: 'completed', result: 'Wrote 2 lines.', durationMs: 30 },
-      { type: 'tool-running', id: 'call-2', name: 'file_read', args: { path: 'shopping.txt' } },
-      { type: 'tool-done', id: 'call-2', status: 'completed', result: 'milk\nbread', durationMs: 20 },
-      { type: 'bot-text', text: 'Saved.' },
-      { type: 'bot-silent' },
-      { type: 'tool-running', id: 'call-3', name: 'web_search', args: { query: 'bread recipe' } },
-    )
-    const order = [...view.getByRole('list', { name: 'Transcript' }).children].map((node) => node.getAttribute('data-role') ?? node.querySelector('[role="group"]')?.getAttribute('aria-label'))
-    expect(order).toEqual(['user', 'Earlier tools', 'assistant', 'Tools'])
-    const first = view.getByRole('group', { name: 'Earlier tools' })
-    expect(first.textContent).toContain('2 steps')
-    expect(first.textContent).toContain('50ms')
-    expect(first.querySelector('[data-tool]')).toBeNull()
-    fireEvent.click(within(first).getByRole('button'))
-    expect([...first.querySelectorAll('[data-tool]')].map((node) => node.getAttribute('data-tool'))).toEqual(['file_write', 'file_read'])
-    expect(view.getByRole('group', { name: 'Tools' }).querySelector('[data-tool="web_search"]')).not.toBeNull()
-    expect(view.queryByRole('dialog')).toBeNull()
+    expect(view.queryByText('No connection.')).toBeNull()
   })
 
   it('a model without tools says so in one line, next to the latency', () => {
@@ -416,6 +348,25 @@ describe('VoiceSessionPanel', () => {
     expect(session.stopVoiceSession).toHaveBeenCalledTimes(1)
     // With the reason, so the surface can say why the session is over.
     expect(session.stopVoiceSession).toHaveBeenCalledWith('left')
+  })
+
+  it('closing the desktop window to the tray ends voice while the panel is still mounted', async () => {
+    vi.stubGlobal('__TAURI_INTERNALS__', {})
+    const remove = vi.fn()
+    listen.mockResolvedValue(remove)
+    try {
+      const view = render(createElement(VoiceSessionPanel))
+      await vi.waitFor(() => expect(listen).toHaveBeenCalledWith('app:hidden', expect.any(Function)))
+      const onHide = listen.mock.calls.find(([event]) => event === 'app:hidden')?.[1]
+      const beforeHide = session.stopVoiceSession.mock.calls.length
+      act(() => onHide())
+      expect(session.stopVoiceSession).toHaveBeenCalledTimes(beforeHide + 1)
+      expect(session.stopVoiceSession).toHaveBeenLastCalledWith('left')
+      view.unmount()
+      expect(remove).toHaveBeenCalledOnce()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('a session that ended by itself says why and offers Start again', () => {

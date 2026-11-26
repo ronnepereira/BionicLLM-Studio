@@ -46,7 +46,7 @@ import { useRAGStore } from '../../stores/ragStore'
 import { __resetRunLanesForTests, localLaneHolder } from '../../lib/run-lanes'
 import { DEFAULT_SETTINGS } from '../../lib/constants'
 
-const MODEL = 'lu-cloud::zai-org/GLM-5.3'
+const MODEL = 'openai::queue-test-model'
 
 function controllableSSE() {
   let controller!: ReadableStreamDefaultController<Uint8Array>
@@ -84,10 +84,10 @@ beforeEach(() => {
   useGenerationStore.setState({ generating: {}, aborters: {}, runs: {} })
   useModelStore.setState({ models: [], activeModel: MODEL })
   useSettingsStore.setState({
-    settings: { ...DEFAULT_SETTINGS, appMode: 'cloud', cavemanMode: 'off' },
+    settings: { ...DEFAULT_SETTINGS, appMode: 'local', cavemanMode: 'off' },
   })
   useProviderStore.setState((s) => ({
-    providers: { ...s.providers, 'lu-cloud': { ...s.providers['lu-cloud'], enabled: true } },
+    providers: { ...s.providers, openai: { ...s.providers.openai, enabled: true } },
   }))
   useRAGStore.setState({
     ragEnabled: {},
@@ -166,5 +166,34 @@ describe('Claim und Freigabe in sendMessage: JEDER Ausgang gibt frei (Auflage 1)
 
     expect(__activeChatRunConvIdsForTests()).toEqual([])
     expect(result.current.isGenerating).toBe(false)
+  })
+
+  it('sends a queued prompt to its original conversation with its original model', async () => {
+    const origin = seed()
+    const chosenLater = 'openai::other-model'
+    const visible = useChatStore.getState().createConversation(chosenLater, '')
+    useModelStore.setState({ activeModel: chosenLater })
+    const stream = controllableSSE()
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      if (!String(input).includes('/chat/completions')) return new Response('{}', { status: 200 })
+      return new Response(stream.readable, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+    })
+
+    const { result } = renderHook(() => useChat())
+    await act(async () => {
+      const run = result.current.sendMessage('queued prompt', undefined, undefined, undefined, { conversationId: origin, model: MODEL })
+      await tick()
+      stream.push('queued answer')
+      stream.done()
+      await run
+    })
+
+    const state = useChatStore.getState()
+    expect(state.activeConversationId).toBe(visible)
+    expect(state.conversations.find(chat => chat.id === visible)?.messages).toEqual([])
+    expect(state.conversations.find(chat => chat.id === origin)?.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'user', content: 'queued prompt' }),
+      expect.objectContaining({ role: 'assistant', content: 'queued answer', modelId: MODEL }),
+    ]))
   })
 })

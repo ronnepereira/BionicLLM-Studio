@@ -1,6 +1,7 @@
 import { useUiText } from "../../lib/ui-text"
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AlertTriangle, Mic, MicOff, Square } from 'lucide-react'
+import { ApprovalDialog } from '../chat/ApprovalDialog'
 import { ComputerQuestionSlot } from '../computer/ComputerQuestion'
 import { ComputerChatPermission } from '../computer/ComputerChatPermission'
 import { ComputerNote } from '../computer/ComputerNote'
@@ -9,15 +10,17 @@ import type { VoiceMood } from './VoiceWaves'
 import { useVoiceSessionStore } from '../../stores/voiceSessionStore'
 import { useModelStore } from '../../stores/modelStore'
 import { displayModelName } from '../../api/providers/model-name'
-import { isLinux, isMacOS, isWindows } from '../../api/backend'
+import { isLinux, isMacOS, isTauri, isWindows } from '../../api/backend'
 import {
+  answerVoiceApproval,
   setVoiceMuted,
   startVoiceSession,
   stopVoiceSession,
 } from '../../api/voice-session'
 import { latencyLabel, startLabel } from '../../lib/voice/session-state'
 import { voiceStatus, voiceStatusText } from './voice-status'
-import { voiceTimeline } from '../../lib/voice/tool-view'
+import { voiceToolCall } from '../../lib/voice/tool-view'
+import { askingWord } from '../status/run-status'
 import { voiceModelAdvice } from '../../lib/voice/model-advice'
 import { useComputerStore } from '../../stores/computerStore'
 import type { VoiceError } from '../../lib/voice/session-state'
@@ -77,7 +80,6 @@ export function VoiceSessionPanel() {
   const startedAt = useVoiceSessionStore((s) => s.startedAt)
   const activity = useVoiceSessionStore((s) => s.activity)
   const muted = useVoiceSessionStore((s) => s.muted)
-  const lines = useVoiceSessionStore((s) => s.lines)
   const tools = useVoiceSessionStore((s) => s.tools)
   const approval = useVoiceSessionStore((s) => s.approval)
   const runningTool = useVoiceSessionStore((s) => s.runningTool)
@@ -119,12 +121,44 @@ export function VoiceSessionPanel() {
     return () => clearInterval(id)
   }, [starting, startedAt])
 
+  // Same keys as the approval strip in the chat: Enter allows, Escape denies.
+  useEffect(() => {
+    if (!approval) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat) return
+      const target = event.target as HTMLElement | null
+      if (target?.closest?.('[role="dialog"], button, a, input, select, textarea')) return
+      if (event.key === 'Enter') { event.preventDefault(); answerVoiceApproval(true) }
+      else if (event.key === 'Escape') { event.preventDefault(); answerVoiceApproval(false) }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [approval])
+
+  useEffect(() => {
+    const stop = () => stopVoiceSession('left')
+    let disposed = false
+    let unlisten: (() => void) | undefined
+    // Closing to the tray keeps this panel mounted.
+    if (isTauri()) {
+      void import('@tauri-apps/api/event')
+        .then(({ listen }) => listen('app:hidden', () => { if (!disposed) stop() }))
+        .then((remove) => { if (disposed) remove(); else unlisten = remove })
+        .catch(() => {})
+    }
+    return () => {
+      disposed = true
+      unlisten?.()
+      stop()
+    }
+  }, [])
+
   const modelName = sessionModel ?? (activeModel ? displayModelName(activeModel) : null)
   const liveStatus = live ? voiceStatus({ activity, muted, approval, runningTool }, screenTask ? { step: screenTask.steps.at(-1)?.label || screenTask.goal, asking: screenAsking, paused: screenPaused } : null) : null
   const status = starting
     ? startLabel(startStep, coldStart, elapsed)
     : liveStatus ? voiceStatusText(liveStatus)
-      : phase === 'error' ? uiText('Voice stopped') : endNote ?? uiText('Ready')
+      : phase === 'error' ? uiText('Voice stopped') : uiText(endNote ?? 'Ready')
   // Seconds a piece of work has been going, counted from the moment its word appeared.
   const workWord = liveStatus?.kind ? liveStatus.word : null
   const workSecs = useSecondsSince(workWord)
@@ -135,15 +169,27 @@ export function VoiceSessionPanel() {
           : activity === 'thinking' || activity === 'tool' ? 'thinking'
             : muted ? 'muted' : 'listening'
   const latency = latencyLabel(latencyMs)
-  const timeline = useMemo(() => voiceTimeline(lines, tools), [lines, tools])
-  const empty = timeline.length === 0
+  const waiting = approval ? tools.find((tool) => tool.id === approval.id) : undefined
+  const approve = () => answerVoiceApproval(true)
+  const deny = () => answerVoiceApproval(false)
 
   return (
     <div className="flex-1 min-h-0 flex flex-col" data-testid="voice-session" data-phase={phase} data-activity={live ? activity : undefined}>
-      <div className={`w-full max-w-2xl mx-auto px-4 pb-4 flex flex-col min-h-0`}>
+      <div className="lu-voice-panel w-full max-w-2xl mx-auto px-4 pb-4 flex flex-1 flex-col min-h-0 overflow-y-auto">
+        {/* The approval strip of the chat. Here it says who asks, in a whole
+            sentence: nobody typed anything, and "Yes" and "No" answer it too. */}
+        {approval && waiting && (
+          <div role="group" aria-label={uiText("Approval")} data-testid="voice-approval">
+            <ApprovalDialog
+              toolCall={voiceToolCall(waiting)}
+              onApprove={approve}
+              onReject={deny}
+              question={uiText('Voice wants to {v0}. Nothing happens until you answer.', { v0: uiText(askingWord(approval.name)) })}
+            />
+          </div>
+        )}
 
-        {/* A question of computer control stands here too, above the controls
-            of the session and never as a line of the transcript. */}
+        {/* Computer control can still ask for input during the session. */}
         <ComputerQuestionSlot className="mb-2" />
         {chatAsk && <ComputerChatPermission ask={chatAsk} />}
         <ComputerNote />
@@ -158,18 +204,14 @@ export function VoiceSessionPanel() {
           </div>
         )}
 
-        {/* The portrait shrinks once there is a transcript; the original audio
-            spectrum stays below it. Visual pause never changes the session. */}
-        <VoicePortrait mood={mood} compact={false} />
+        <VoicePortrait mood={mood} />
 
-        {empty && (
+        {!running && (
           <p className="mx-auto mt-1 mb-4 max-w-sm text-center t-body leading-relaxed text-gray-500 dark:text-gray-400">
-            {running
-              ? uiText("Just talk. You can speak over the answer at any time.")
-              : modelName
-                ? <>{uiText("Voice answers with ")}<span className="text-gray-700 dark:text-gray-300">{modelName}</span>{uiText(", the model selected in Chat.")}</>
-                : uiText("Pick a chat model first. Voice answers with the model selected in Chat.")}
-            {!running && modelAdvice && (
+            {modelName
+              ? <>{uiText("Voice answers with ")}<span className="text-gray-700 dark:text-gray-300">{modelName}</span>{uiText(", the model selected in Chat.")}</>
+              : uiText("Pick a chat model first. Voice answers with the model selected in Chat.")}
+            {modelAdvice && (
               <span data-testid="voice-model-advice" className="block mt-1 t-micro text-gray-500 dark:text-gray-500">{modelAdvice}</span>
             )}
           </p>

@@ -2233,6 +2233,7 @@ export function SettingsPage() {
 
         {/* ── Agent tab ─────────────────────────────────── */}
         {tab === 'agent' && (<>
+          <p className="t-micro text-gray-500 leading-relaxed">{uiText("Saved agents are profiles with instructions and an optional model, managed in the Agents window. Ask in chat to run one agent or a team: author first, reviewer last. The team shares results and returns review findings to the author until completion or a blocker. Stop cancels the execution.")}</p>
           <Section title="Personas">
             
             <PersonaPanel />
@@ -2293,7 +2294,7 @@ export function SettingsPage() {
                 className="w-20 px-1.5 py-0.5 rounded bg-transparent border border-white/8 t-mono text-right text-gray-300 focus:outline-none focus:border-white/20"
               />
             </div>
-            <div className="t-micro text-gray-500 dark:text-gray-500 leading-relaxed pt-0.5">{uiText("0 = use the defaults (10 calls, 5 steps). A sub-agent runs unattended, so these stay deliberately tight, raise them only for a task you know is long.")}</div>
+            <div className="t-micro text-gray-500 dark:text-gray-500 leading-relaxed pt-0.5">{uiText("0 = defaults: 10 tool calls and 5 steps. A regular delegated sub-agent stops at this limit. Saved-agent teams use these limits per working slice and automatically continue with preserved context while making progress. Repeated failures pause the team. Agent permissions also apply to every team member.")}</div>
             </Section>
           )}
 

@@ -712,9 +712,8 @@ export const useModelStore = create<ModelState>()(
         } else if (!state.lastLocalModel) {
           state.lastLocalModel = state.activeModel
         }
-        // Desktop starts with an explicit model choice. Remembered picks still
-        // serve mode switches; runtime chat/image handoffs are unchanged.
-        if (!singleModelSlot()) state.activeModel = null
+        // Keep the last deliberate selection across desktop restarts too.
+        // setModels validates it when the provider inventory arrives.
       },
     }
   )

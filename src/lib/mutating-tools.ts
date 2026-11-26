@@ -19,7 +19,8 @@
  * which is part of why the flag was decorative in the first place.
  */
 export const MUTATING_TOOLS = new Set([
-  'studio_agent_create', 'studio_schedule_create',
+  'remotion_write', 'remotion_import_asset', 'remotion_compositions', 'remotion_preview', 'remotion_render', 'remotion_cancel',
+  'studio_agent_create', 'studio_schedule_create', 'studio_agents_run', 'studio_agent_delete', 'studio_schedule_delete',
   'instagram_image_prepare',
   'instagram_reel_prepare',
   'facebook_page_prepare',

@@ -5,10 +5,10 @@ import { drawWireFace } from './wire-face-renderer'
 import type { VoiceMood } from './VoiceWaves'
 import { LIGHT } from './VoiceWaves'
 
-interface Props { mood: VoiceMood; paused: boolean; compact?: boolean }
+interface Props { mood: VoiceMood; paused: boolean }
 
 /** The approved floating 3D face, drawn from geometry and articulated by audio. */
-export function VoiceHologram({ mood, paused, compact = false }: Props) {
+export function VoiceHologram({ mood, paused }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null)
   const controls = useRef({ mood, paused })
   const restartRef = useRef<(() => void) | null>(null)
@@ -76,5 +76,5 @@ export function VoiceHologram({ mood, paused, compact = false }: Props) {
   }, [])
 
   return <canvas ref={canvas} aria-hidden="true" data-testid="voice-hologram" data-mood={mood}
-    data-renderer="canvas-3d" className={`block w-full max-w-lg mx-auto min-h-0 ${compact ? 'h-40' : 'h-[clamp(140px,44vh,420px)]'}`} />
+    data-renderer="canvas-3d" className="block w-full max-w-lg mx-auto min-h-0 h-[clamp(140px,44vh,420px)]" />
 }

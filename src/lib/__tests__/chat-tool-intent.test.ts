@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { REMOTION_TOOL_NAMES } from '../plugins/remotion-tools'
 import {
   detectChatToolCapability,
   detectChatToolIntent,
@@ -11,7 +12,7 @@ import {
 describe('detectChatToolCapability', () => {
   it('exposes the curated chat tools and internal browser controls', () => {
     expect([...CHAT_TOOLS].sort()).toEqual(
-      ['studio_capabilities', 'studio_agents_list', 'studio_agent_create', 'studio_schedule_create', 'browser_action', 'browser_open', 'browser_read', 'conversation_search', 'file_write', 'image_generate', 'video_generate', 'web_fetch', 'web_search'].sort(),
+      [...REMOTION_TOOL_NAMES, 'studio_capabilities', 'studio_agents_list', 'studio_agent_create', 'studio_schedule_create', 'studio_agents_run', 'studio_agent_delete', 'studio_schedule_delete', 'browser_action', 'browser_open', 'browser_read', 'conversation_search', 'file_write', 'image_generate', 'video_generate', 'web_fetch', 'web_search'].sort(),
     )
   })
 

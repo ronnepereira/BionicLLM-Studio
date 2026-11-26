@@ -48,6 +48,23 @@ describe('resolveVoiceBrain', () => {
     await expect(resolveVoiceBrain('')).rejects.toBeInstanceOf(VoiceBrainError)
   })
 
+  it('uses the selected OpenAI-compatible entry while the built-in engine is enabled', async () => {
+    const model = 'nvidia/nemotron-3.5-super-vl-120b-a12b'
+    const baseUrl = 'https://inference.example.com/v1'
+    const state = useProviderStore.getState()
+    provider('openai', { managed: true, isLocal: true })
+    const entryId = state.addOpenAIEntry({ name: 'Hosted', baseUrl, isLocal: false })
+    state.setOpenAIEntryApiKey(entryId, KEY)
+    resolves('openai', model)
+
+    const brain = await resolveVoiceBrain(`openai:${entryId}::${model}`)
+    expect(brain.llm).toMatchObject({ model, base_url: baseUrl, api_key: KEY })
+    expect(brain.local).toBe(false)
+    expect(brain.restore).toBeUndefined()
+    expect(engine.alive).not.toHaveBeenCalled()
+    expect(engine.ctx).not.toHaveBeenCalled()
+  })
+
   it('wakes the LU Engine on the model and reads its address afterwards', async () => {
     provider('openai', { baseUrl: 'http://127.0.0.1:8127/v1', managed: true, isLocal: true, apiKey: '' })
     resolves('openai', 'qwen-9b')

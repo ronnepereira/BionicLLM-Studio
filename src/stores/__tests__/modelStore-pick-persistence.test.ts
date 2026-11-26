@@ -32,6 +32,15 @@ const shellSrc = readFileSync(resolve(here, '../../components/layout/AppShell.ts
 const QWEN = 'openai::Qwen3-4B-Q4_K_M'
 const HERMES = 'openai::Hermes-3-Llama-3.2-3B.Q4_K_M'
 
+it('restores the actual persisted desktop selection after restart', async () => {
+  const saved = { ...useModelStore.getState(), activeModel: QWEN, lastLocalModel: QWEN, autoCloudPickCleared: true }
+  useModelStore.persist.getOptions().onRehydrateStorage?.(saved)?.(saved, undefined)
+  expect(saved.activeModel).toBe(QWEN)
+  useModelStore.setState({ activeModel: saved.activeModel })
+  useModelStore.getState().setModels([])
+  expect(useModelStore.getState().activeModel).toBe(QWEN)
+})
+
 const chat = (name: string) => ({
   name, model: name, size: 0, type: 'text' as const,
   provider: 'openai' as const, providerName: 'Built-in Engine',
@@ -76,10 +85,10 @@ describe('an empty model list is not a reason to drop the pick', () => {
 })
 
 describe('the pick is written to disk in the first place', () => {
-  it('automatically chooses the first verified 7B model, not a small or opaque row', () => {
+  it('requires an explicit first desktop pick instead of selecting the first catalog row', () => {
     useModelStore.setState({ activeModel: null })
     useModelStore.getState().setModels([chat(HERMES), chat('opaque'), chat('test-7B')])
-    expect(useModelStore.getState().activeModel).toBe('test-7B')
+    expect(useModelStore.getState().activeModel).toBeNull()
   })
   it('activeModel is part of what persist keeps', () => {
     expect(storeSrc).toMatch(/partialize:[\s\S]*?activeModel: state\.activeModel/)
@@ -101,7 +110,7 @@ describe('the pick is written to disk in the first place', () => {
     // das fuenfte die Wahl, die jeder Modus zuletzt hatte (Fund 1, T3 und T1
     // auf der Box). The call is still the rule, not a hand-rolled decision.
     expect(shellSrc).toMatch(
-      /pickForMode\(activeModel, allModels, appMode, pendingCloudModel, \{\s*\n\s*local: lastLocalModel,\s*\n\s*cloud: lastCloudModel,\s*\n\s*\}\)/,
+      /pickForMode\(activeModel, allModels, appMode, pendingCloudModel, \{\s*\n\s*local: lastLocalModel,\s*\n\s*cloud: lastCloudModel,\s*\n\s*\}, singleModelSlot\(\)\)/,
     )
     expect(shellSrc).not.toMatch(/const inMode = \(name: string \| null\)/)
   })

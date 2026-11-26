@@ -14,10 +14,6 @@ function smooth(points: readonly Vec3[]): Vec3[] {
   out.push(points[points.length - 1])
   return out
 }
-const scalp = Array.from({ length: 21 }, (_, r) => Array.from({ length: 49 }, (_, j): Vec3 => {
-  const latitude = r / 20 * Math.PI, a = j / 48 * 2 * Math.PI
-  return [7.1 * Math.sin(latitude) * Math.sin(a), 1.2 + 10.2 * Math.cos(latitude), -1.3 + 7.3 * Math.sin(latitude) * Math.cos(a)]
-}))
 // Quantized shading keeps the relief while batching the 898 facial triangles.
 const shading: Triangle[][] = Array.from({ length: 14 }, () => [])
 for (const f of FACE_TRIANGLES) {
@@ -46,12 +42,6 @@ export function drawWireFace(ctx: CanvasRenderingContext2D, width: number, heigh
     ctx.beginPath(); path(points.map(toScreen)); stroke(alpha, weight)
   }
   const unit = Math.max(.55, Math.min(1.15, scale / 27))
-  // Scalp/hair base
-  ctx.beginPath()
-  scalp.forEach(row => path(row.map(toScreen)))
-  for (let j = 0; j <= 48; j++) path(scalp.map(row => toScreen(row[j])))
-  stroke(dark ? .12 : .18, .6 * unit)
-
   const articulated = articulateFace(pose)
   const points = articulated.map(toScreen)
 

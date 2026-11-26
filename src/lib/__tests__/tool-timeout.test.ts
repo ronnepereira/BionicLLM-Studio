@@ -28,6 +28,10 @@ import {
 
 const settings = {}
 
+it('lets the saved-agent team run until its own completion or Stop', () => {
+  expect(toolCallCapMs('studio_agents_run', { agentIds: ['author', 'reviewer'] }, settings)).toBe(NO_PRACTICAL_CAP_MS)
+})
+
 describe('toolCallCapMs, Fix 1: wer bekommt keinen erreichbaren Deckel', () => {
   it('delegate_task im Vordergrund (kein background-Feld) bekommt den praktisch unerreichbaren Deckel', () => {
     expect(toolCallCapMs('delegate_task', {}, settings)).toBe(NO_PRACTICAL_CAP_MS)

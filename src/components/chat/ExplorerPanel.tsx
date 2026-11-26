@@ -38,9 +38,10 @@ import {
   PanelRightOpen,
   RefreshCw,
   FolderX,
+  Trash2,
 } from 'lucide-react'
 import { useCodexStore } from '../../stores/codexStore'
-import { useAnyAgentLoopActive } from '../../stores/agentLoopStore'
+import { useAgentLoopStore, useAnyAgentLoopActive } from '../../stores/agentLoopStore'
 import { useGenerationStore } from '../../stores/generationStore'
 import { useAgentModeStore } from '../../stores/agentModeStore'
 import { useSettingsStore } from '../../stores/settingsStore'
@@ -58,6 +59,7 @@ import {
   EXPLORER_IGNORED,
   FS_LIST_CAP,
   flattenTree,
+  isWithinRoot,
   loadChildren,
   toggleExpanded,
   type ExplorerListing,
@@ -71,6 +73,8 @@ import { useChatStore } from '../../stores/chatStore'
 import { useTodoStore } from '../../stores/todoStore'
 import { HINWEIS_TEXT } from '../../lib/hinweis'
 import { workspacePickRefusedMessage } from '../../lib/workspace-rejected'
+import { Modal } from '../ui/Modal'
+import { ModalActions, ModalButton } from '../ui/ModalActions'
 
 const fsList: FsList = (args) => backendCall('fs_list', args as unknown as Record<string, unknown>)
 
@@ -143,6 +147,11 @@ export function ExplorerPanel({ onApprovePlan, embedded = false, showPlan = true
   const [pickError, setPickError] = useState<string | null>(null)
   const [selected, setSelected] = useState<ExplorerNode | null>(null)
   const [fileNotice, setFileNotice] = useState('')
+  const [checked, setChecked] = useState<Set<string>>(new Set())
+  const [trashPlan, setTrashPlan] = useState<{ root: string; items: ExplorerNode[] } | null>(null)
+  const [trashing, setTrashing] = useState(false)
+  const trashInProgress = useRef(false)
+  const [trashErrors, setTrashErrors] = useState<{ path: string; message: string }[]>([])
 
   const planWaiting = useCodexStore((s) =>
     activeConversationId ? !!s.planApprovalByConversation[activeConversationId] : false,
@@ -182,6 +191,9 @@ export function ExplorerPanel({ onApprovePlan, embedded = false, showPlan = true
     setExpanded([])
     setSelected(null)
     setFileNotice('')
+    setChecked(new Set())
+    setTrashPlan(null)
+    setTrashErrors([])
     setError(null)
     setPickError(null)
     if (root) {
@@ -222,6 +234,61 @@ export function ExplorerPanel({ onApprovePlan, embedded = false, showPlan = true
     const next = toggleExpanded(expanded, node.path)
     setExpanded(next)
     if (next.includes(node.path) && !listings[node.path]) load(node.path)
+    if (!next.includes(node.path)) {
+      setChecked(current => new Set([...current].filter(path => path === node.path || !isWithinRoot(node.path, path))))
+    }
+  }
+
+  const forgetTrashed = (paths: string[]) => {
+    const removed = (path: string) => paths.some(trashed => isWithinRoot(trashed, path))
+    setSelected(current => current && removed(current.path) ? null : current)
+    setChecked(current => new Set([...current].filter(path => !removed(path))))
+    setExpanded(current => current.filter(path => !removed(path)))
+    setListings(current => Object.fromEntries(Object.entries(current)
+      .filter(([dir]) => !removed(dir))
+      .map(([dir, listing]) => [dir, { ...listing, nodes: listing.nodes.filter(node => !removed(node.path)) }])))
+    useCodexStore.getState().bumpFileTreeVersion()
+  }
+
+  const sendSelectionToTrash = async () => {
+    if (!trashPlan || trashInProgress.current || lockReason) return
+    trashInProgress.current = true
+    setTrashing(true)
+    const moved: string[] = []
+    const failed: { path: string; message: string }[] = []
+    try {
+      for (const item of trashPlan.items) {
+        const { workingDirectory, sendsInFlight, threads } = useCodexStore.getState()
+        const locked = codexBusyReason({
+          sendsInFlight,
+          threads,
+          generating: useGenerationStore.getState().generating,
+          loop: Object.keys(useAgentLoopStore.getState().loops).length > 0,
+        })
+        if (workingDirectory !== trashPlan.root || locked) {
+          failed.push({ path: item.path, message: 'A pasta de trabalho mudou ou está em uso. Os itens restantes foram preservados.' })
+          break
+        }
+        try {
+          const result = await backendCall<{ trashed: boolean }>('fs_trash', {
+            path: item.path, workingDirectory: trashPlan.root, isDirectory: item.isDirectory,
+          })
+          if (!result?.trashed) throw new Error('O envio à Lixeira não foi confirmado.')
+          moved.push(item.path)
+        } catch (error) {
+          failed.push({ path: item.path, message: error instanceof Error ? error.message : String(error) })
+        }
+      }
+      if (useCodexStore.getState().workingDirectory === trashPlan.root) {
+        if (moved.length) forgetTrashed(moved)
+        setFileNotice(moved.length === 1 ? '1 item enviado à Lixeira.' : moved.length ? `${moved.length} itens enviados à Lixeira.` : '')
+        setTrashErrors(failed)
+        setTrashPlan(null)
+      }
+    } finally {
+      trashInProgress.current = false
+      setTrashing(false)
+    }
   }
 
   // Der Ordner-Dialog der gepackten App (Fehler D, ein Nutzer,
@@ -319,6 +386,14 @@ export function ExplorerPanel({ onApprovePlan, embedded = false, showPlan = true
   const rootListing = listings[root]
   const rows = flattenTree(root, listings, expanded)
   const loadingRoot = busy.includes(root)
+  const listedItems = rows.map(row => row.node)
+  const checkedItems = listedItems.filter(node => checked.has(node.path))
+  const allChecked = rows.length > 0 && checkedItems.length === rows.length
+  const openTrashPlan = () => {
+    const directories = checkedItems.filter(node => node.isDirectory)
+    const items = checkedItems.filter(node => !directories.some(dir => dir.path !== node.path && isWithinRoot(dir.path, node.path)))
+    setTrashPlan({ root, items })
+  }
 
   return (
     <aside
@@ -340,7 +415,7 @@ export function ExplorerPanel({ onApprovePlan, embedded = false, showPlan = true
       <div className="flex items-center gap-1 p-1.5 border-b border-gray-200 dark:border-white/[0.04]">
         <button
           onClick={pickFolder}
-          disabled={!!lockReason}
+          disabled={!!lockReason || trashing}
           data-testid="explorer-pick-folder"
           title={lockTitle || root || uiText("Pick the folder the agent works in")}
           className="flex-1 disabled:opacity-40 min-w-0 flex items-center gap-1 px-1.5 py-1 rounded bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/[0.06] hover:border-gray-400 dark:hover:border-white/15 transition-colors text-left"
@@ -355,7 +430,7 @@ export function ExplorerPanel({ onApprovePlan, embedded = false, showPlan = true
         {root && (
           <button
             onClick={removeFolder}
-            disabled={!!lockReason}
+            disabled={!!lockReason || trashing}
             data-testid="explorer-remove-folder"
             aria-label={uiText("Remove the working directory")}
             title={
@@ -400,6 +475,19 @@ export function ExplorerPanel({ onApprovePlan, embedded = false, showPlan = true
         </p>
       )}
 
+      {root && rows.length > 0 && <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-2 py-1.5 dark:border-white/10">
+        <label className="flex items-center gap-1.5 text-xs" title="Seleciona todos os itens exibidos na lista">
+          <input type="checkbox" className="accent-blue-600" checked={allChecked} disabled={trashing}
+            ref={input => { if (input) input.indeterminate = checkedItems.length > 0 && !allChecked }}
+            onChange={event => setChecked(event.target.checked ? new Set(listedItems.map(node => node.path)) : new Set())} />
+          Selecionar tudo
+        </label>
+        <button type="button" disabled={!checkedItems.length || !!lockTitle || trashing} onClick={openTrashPlan}
+          className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs text-red-600 hover:bg-red-500/10 disabled:opacity-40 dark:text-red-400">
+          <Trash2 size={13} />Excluir selecionados{checkedItems.length > 0 && ` (${checkedItems.length})`}
+        </button>
+      </div>}
+
       <div className={`overflow-y-auto scrollbar-thin p-1 ${selected ? 'max-h-[45%] shrink-0' : 'flex-1 min-h-0'}`}>
         {/* R2-15: der leere Zustand stand VOR der Fehlerzeile. Wird ein Ordner
             abgelehnt, bleibt `root` leer, also gewann "No folder picked." und
@@ -432,13 +520,24 @@ export function ExplorerPanel({ onApprovePlan, embedded = false, showPlan = true
               const isSelected = selected?.path === row.node.path
               return (
                 <Fragment key={row.node.path}>
+                  <div className="flex items-center gap-1" style={{ paddingLeft: `${row.depth * 8 + 4}px` }}>
+                  <input type="checkbox" className="shrink-0 accent-blue-600" aria-label={`Selecionar ${row.node.name}`}
+                    title={row.node.path} checked={checked.has(row.node.path)} disabled={trashing}
+                    onChange={event => {
+                      const mark = event.target.checked
+                      setChecked(current => {
+                        const next = new Set(current)
+                        if (mark) next.add(row.node.path)
+                        else next.delete(row.node.path)
+                        return next
+                      })
+                    }} />
                   <button
                     onClick={() =>
                       row.node.isDirectory ? onToggleDir(row.node) : setSelected(row.node)
                     }
                     title={row.node.path}
-                    style={{ paddingLeft: `${row.depth * 8 + 4}px` }}
-                    className={`flex items-center gap-1 w-full pr-1 py-[2px] text-[0.5rem] rounded transition-colors text-left ${
+                    className={`flex min-w-0 flex-1 items-center gap-1 px-1 py-[2px] text-[0.5rem] rounded transition-colors text-left ${
                       isSelected
                         ? 'bg-gray-200/70 dark:bg-white/[0.07] text-gray-800 dark:text-gray-100'
                         : row.node.isDirectory
@@ -464,6 +563,7 @@ export function ExplorerPanel({ onApprovePlan, embedded = false, showPlan = true
                     )}
                     <span className="truncate">{row.node.name}</span>
                   </button>
+                  </div>
                   {isOpen && childListing && (
                     <ListingHints listing={childListing} depth={row.depth + 1} />
                   )}
@@ -475,13 +575,27 @@ export function ExplorerPanel({ onApprovePlan, embedded = false, showPlan = true
       </div>
 
       {fileNotice && <p role="status" className="border-t border-gray-200 px-2 py-1 text-xs text-emerald-600 dark:border-white/10 dark:text-emerald-400">{fileNotice}</p>}
+      {trashErrors.length > 0 && <ul role="alert" className="max-h-28 overflow-auto break-all border-t border-gray-200 px-2 py-1 text-xs text-red-600 dark:border-white/10 dark:text-red-400">
+        {trashErrors.map(({ path, message }) => <li key={path}>{path} — {message}</li>)}
+      </ul>}
+      <Modal open={!!trashPlan} title="Enviar à Lixeira?" onClose={() => { if (!trashing) setTrashPlan(null) }}>
+        <p className="text-sm text-gray-600 dark:text-gray-400">Confira os itens selecionados. As pastas serão enviadas com todo o conteúdo.</p>
+        <ul className="mt-3 max-h-52 overflow-auto break-all rounded-lg bg-gray-100 p-3 font-mono text-xs dark:bg-white/5">
+          {trashPlan?.items.map(item => <li key={item.path} className="py-0.5">{item.path}</li>)}
+        </ul>
+        {lockTitle && <p role="status" className="mt-2 text-sm text-amber-500">{lockTitle}</p>}
+        <ModalActions>
+          <ModalButton disabled={trashing} onClick={() => setTrashPlan(null)} data-autofocus>Cancelar</ModalButton>
+          <ModalButton disabled={trashing || !!lockTitle} onClick={() => { void sendSelectionToTrash() }} className="!bg-red-600 !text-white hover:!bg-red-700">{trashing ? 'Enviando…' : 'Enviar à Lixeira'}</ModalButton>
+        </ModalActions>
+      </Modal>
       {selected && (
         // Keyed on the path: another file is another component, so the
         // per-file script opt-in cannot survive the switch.
-        <FilePreview key={selected.path} node={selected} root={root} onClose={() => setSelected(null)} deleteLocked={lockTitle} onTrashed={path => {
-          setSelected(current => current?.path === path ? null : current)
+        <FilePreview key={selected.path} node={selected} root={root} onClose={() => setSelected(null)} deleteLocked={lockTitle || (trashing ? 'Envio à Lixeira em andamento.' : null)} onTrashed={path => {
+          if (useCodexStore.getState().workingDirectory !== root) return
+          forgetTrashed([path])
           setFileNotice('Arquivo enviado para a Lixeira: ' + path.split(/[\\/]/).at(-1))
-          useCodexStore.getState().bumpFileTreeVersion()
         }} />
       )}
 

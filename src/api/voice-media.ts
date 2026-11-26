@@ -70,6 +70,8 @@ export function classifyMicError(error: unknown): VoiceMicError {
 }
 
 export interface VoiceMediaOptions {
+  /** Ends this manager's lifetime with the session that owns it. */
+  signal?: AbortSignal
   /** Preferred microphone. Falls back to the default when it is gone. */
   micId?: string | null
   /** False for a session that starts muted: nothing is kept or sent until it is unmuted. */
@@ -101,6 +103,7 @@ function workletModuleUrl(): string {
 }
 
 export class LuVoiceMediaManager {
+  private readonly signal: AbortSignal | undefined
   private readonly inputRate: number
   private readonly outputRate: number
   private readonly chunkSamples: number
@@ -142,6 +145,7 @@ export class LuVoiceMediaManager {
   captureMode: 'worklet' | 'script' | null = null
 
   constructor(options: VoiceMediaOptions = {}) {
+    this.signal = options.signal
     this.inputRate = options.inputRate ?? 16_000
     this.outputRate = options.outputRate ?? 24_000
     this.chunkSamples = options.chunkSamples ?? 512
@@ -174,6 +178,7 @@ export class LuVoiceMediaManager {
    * Safe to call again, a second call returns the first one's result.
    */
   initialize(): Promise<void> {
+    if (this.signal?.aborted) return Promise.reject(new VoiceMicError('unknown', 'The session was stopped.'))
     this.ready ??= this.open().catch((error) => {
       this.ready = null
       this.release()
@@ -286,17 +291,22 @@ export class LuVoiceMediaManager {
 
   /** Switch the microphone. An empty id means the system default. */
   async updateMic(micId: string): Promise<void> {
-    this.micId = micId || null
-    if (!this.context || !this.ready) return
-    const previous = this.stream
+    const preferred = micId || null
+    this.micId = preferred
+    const context = this.context
+    if (!context || !this.ready) return
     let stream: MediaStream
     try {
-      stream = await this.openStream(this.micId)
+      stream = await this.openStream(preferred)
     } catch (error) {
       throw classifyMicError(error)
     }
+    if (this.context !== context || this.micId !== preferred) {
+      stream.getTracks().forEach((track) => track.stop())
+      return
+    }
     this.detachCapture()
-    previous?.getTracks().forEach((track) => track.stop())
+    this.stream?.getTracks().forEach((track) => track.stop())
     await this.attach(stream)
     this.applyMicEnabled()
     const selected = this.selectedMic
@@ -385,7 +395,7 @@ export class LuVoiceMediaManager {
       throw new VoiceMicError('unknown', 'The session was stopped.')
     }
     await this.attach(stream)
-    navigator.mediaDevices.addEventListener?.('devicechange', this.onDeviceChange)
+    if (this.context === context) navigator.mediaDevices.addEventListener?.('devicechange', this.onDeviceChange)
   }
 
   private openStream(micId: string | null): Promise<MediaStream> {
@@ -401,10 +411,16 @@ export class LuVoiceMediaManager {
     const context = this.context
     if (!context) return
     this.stream = stream
-    this.source = context.createMediaStreamSource(stream)
+    const source = context.createMediaStreamSource(stream)
+    this.source = source
     this.down?.reset()
     this.chunker.reset()
-    this.capture = (await this.workletCapture(context, this.source)) ?? this.scriptCapture(context, this.source)
+    const capture = await this.workletCapture(context, source)
+    if (this.context !== context || this.source !== source) {
+      capture?.stop()
+      return
+    }
+    this.capture = capture ?? this.scriptCapture(context, source)
     // Each microphone track has its own echo cancellation, which starts cold.
     this.settle(context)
     const track = stream.getAudioTracks()[0]

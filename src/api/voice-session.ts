@@ -246,6 +246,8 @@ function teardown(session: ActiveSession): void {
   if (session.timer) clearTimeout(session.timer)
   session.timer = null
   session.abort.abort()
+  // Release capture immediately, even if the socket is still connecting.
+  void session.media.disconnect().catch(() => {})
   for (const undo of session.cleanup.splice(0)) {
     try { undo() } catch { /* the session ends either way */ }
   }
@@ -261,10 +263,7 @@ function teardown(session: ActiveSession): void {
   endAgentRun(session.run)
   const client = session.client
   session.client = null
-  // disconnect() closes the socket and, through the transport, the media
-  // manager. Without a client the microphone still has to be released.
-  if (client) void client.disconnect().catch(() => {}).finally(() => { void session.media.disconnect() })
-  else void session.media.disconnect()
+  if (client) void client.disconnect().catch(() => {})
   session.secret = null
   if (active === session) active = null
   scheduleIdleStop()
@@ -507,9 +506,10 @@ export async function startVoiceSession(): Promise<void> {
   cancelIdleStop()
   const prefs = useVoiceStore.getState()
   const muted = prefs.loopStartMuted
-  const media = new LuVoiceMediaManager({ micId: prefs.micId || null, micEnabled: !muted })
+  const abort = new AbortController()
+  const media = new LuVoiceMediaManager({ micId: prefs.micId || null, micEnabled: !muted, signal: abort.signal })
   const session: ActiveSession = {
-    media, abort: new AbortController(), client: null, bridge: null, history: null, run: null,
+    media, abort, client: null, bridge: null, history: null, run: null,
     timer: null, secret: null, ended: false, cleanup: [], warmed: null, startedAt: Date.now(), liveAt: null, work: null,
   }
   active = session

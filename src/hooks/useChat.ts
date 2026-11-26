@@ -1,5 +1,6 @@
 import { skillBudgetForModel } from '../lib/skill-model-budget'
 import { STUDIO_TOOL_NAMES } from '../lib/studio-capabilities'
+import { REMOTION_TOOL_NAMES } from '../lib/plugins/remotion-tools'
 import { sendWindowFor } from '../lib/model-send-window'
 import { useState, useCallback, useEffect } from "react"
 import { create } from "zustand"
@@ -48,6 +49,7 @@ import { applyGoalCommand } from '../lib/goal-command'
 import { useMemory } from "./useMemory"
 import { yieldMemoryLearning } from "../lib/memory-learning-yield"
 import { useAgentModeStore } from "../stores/agentModeStore"
+import type { ComposerQueueTarget } from '../stores/composerQueueStore'
 import { useGenerationStore } from "../stores/generationStore"
 import { runInLane } from "../lib/run-slot"
 import { laneOf, currentLaneFacts } from "../lib/run-lane-of-model"
@@ -714,12 +716,15 @@ export function useChat() {
 
   // The fifth argument is the phone's (round 10): the fourth stays the
   // pending media of Create in the chat, as on the desktop.
-  const sendMessage = useCallback(async (content: string, images?: ImageAttachment[], files?: ChatFileInput[], media?: PendingMedia[], opts?: { continueFrom?: string }) => {
+  const sendMessage = useCallback(async (content: string, images?: ImageAttachment[], files?: ChatFileInput[], media?: PendingMedia[], opts?: { continueFrom?: string } & Partial<ComposerQueueTarget>) => {
     // A new question comes before learning from the last answer (phone only, see yieldMemoryLearning).
     yieldMemoryLearning()
-    const { activeModel } = useModelStore.getState()
+    const activeModel = opts?.model ?? useModelStore.getState().activeModel
     const { settings } = useSettingsStore.getState()
-    const store = useChatStore.getState()
+    const chatState = useChatStore.getState()
+    if (opts?.conversationId && !chatState.conversations.some(chat => chat.id === opts.conversationId)) return
+    const store = opts?.conversationId ? { ...chatState, activeConversationId: opts.conversationId } : chatState
+    const queuedTarget = opts?.conversationId && opts.model ? { conversationId: opts.conversationId, model: opts.model } : undefined
     const persona = useSettingsStore.getState().getActivePersona()
 
     // ── Web image search: “buscar imagem de X”, “imagem da web: …”, etc. ──
@@ -811,7 +816,7 @@ export function useChat() {
     // A model from the wrong mode never reaches a provider: clear it and let
     // the picker's empty state ask for a real selection.
     if (modelOutOfMode(activeModel, settings.appMode)) {
-      useModelStore.getState().setActiveModel(null)
+      if (!queuedTarget) useModelStore.getState().setActiveModel(null)
       return
     }
 
@@ -1015,6 +1020,7 @@ export function useChat() {
             })()
           : undefined
         return sendAgentMessage(slash.expanded, images, {
+          queuedTarget,
           displayContent: content,
           readOnly: slash.command.readOnly === true,
           ...(loop ? { loop } : {}),
@@ -1025,9 +1031,9 @@ export function useChat() {
       }
       // Agent mode: an attached file is also copied into this chat's working
       // folder, where the file tools can open it (useAgentChat).
-      if (createOn) return sendAgentMessage(content, images, { files, createTools: true, media, settingsTools: settingsOn })
-      if (settingsOn) return sendAgentMessage(content, images, { files, settingsTools: true })
-      return sendAgentMessage(content, images, { files })
+      if (createOn) return sendAgentMessage(content, images, { files, createTools: true, media, settingsTools: settingsOn, queuedTarget })
+      if (settingsOn) return sendAgentMessage(content, images, { files, settingsTools: true, queuedTarget })
+      return sendAgentMessage(content, images, { files, queuedTarget })
     }
 
     // Discord 28.09.2026: im normalen Chat liest kein Werkzeug die
@@ -1094,9 +1100,10 @@ export function useChat() {
       const orderedSearch = !route && isMobile() && explicitSearchQuery(content) !== null
       if ((route && !(cloudMode && route.mediaHint)) || orderedSearch) {
         return sendAgentMessage(content, images, {
+          queuedTarget,
           // Create on (Cloud mode only): its two tools ride along with web
           // and file.
-          curatedTools: route?.capability === 'app' ? [...STUDIO_TOOL_NAMES] : cloudMode
+          curatedTools: route?.capability === 'remotion' ? [...REMOTION_TOOL_NAMES] : route?.capability === 'app' ? [...STUDIO_TOOL_NAMES] : cloudMode
             ? [...CHAT_TOOLS.filter((t) => !STUDIO_TOOL_NAMES.some(name => name === t) && t !== 'image_generate' && t !== 'video_generate'), ...(createOn ? CREATE_TOOL_NAMES : []), ...(settingsOn ? SETTINGS_TOOL_NAMES : [])]
             : [...CHAT_TOOLS.filter(t => !STUDIO_TOOL_NAMES.some(name => name === t)), ...(settingsOn ? SETTINGS_TOOL_NAMES : [])],
           chatToolsMode: true,
@@ -1111,6 +1118,7 @@ export function useChat() {
       // two when Create is on); nothing changes without the card.
       if (settingsOn) {
         return sendAgentMessage(content, images, {
+          queuedTarget,
           curatedTools: [...SETTINGS_TOOL_NAMES, ...(createOn ? CREATE_TOOL_NAMES : [])],
           chatToolsMode: true,
           settingsTools: true,
@@ -1127,6 +1135,7 @@ export function useChat() {
     // approval.
     if (activeModel && createOn) {
       return sendAgentMessage(content, images, {
+        queuedTarget,
         curatedTools: CREATE_TOOL_NAMES,
         chatToolsMode: true,
         createTools: true,

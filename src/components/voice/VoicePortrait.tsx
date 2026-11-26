@@ -5,11 +5,11 @@ import { VoiceHologram } from './VoiceHologram'
 import { VoiceWaves } from './VoiceWaves'
 import type { VoiceMood } from './VoiceWaves'
 
-export function VoicePortrait({ mood, compact }: { mood: VoiceMood; compact: boolean }) {
+export function VoicePortrait({ mood }: { mood: VoiceMood }) {
   const text = useUiText()
   const [paused, setPaused] = useState(false)
   return <div data-testid="voice-portrait" className="min-h-0 shrink flex flex-col relative">
-    <VoiceHologram mood={mood} paused={paused} compact={compact} />
+    <VoiceHologram mood={mood} paused={paused} />
     <VoiceWaves mood={mood} paused={paused} className="h-12 min-h-0 shrink" />
     <div className="flex justify-center mb-2">
       <button type="button" onClick={() => setPaused(!paused)}

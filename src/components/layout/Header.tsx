@@ -560,12 +560,12 @@ export function Header() {
             account opens the CloudGateModal; the first successful flip runs
             the one-time cloud onboarding. */}
         <button type="button" aria-label="Painel lateral" title="Painel lateral" aria-pressed={panelOpen && currentView === 'chat'} onClick={() => {
-          if (panelOpen && currentView === 'chat') { useBrowserStore.getState().setOpen(false); useSidePanelStore.getState().close() }
-          else { useCompareStore.getState().setComparing(false); useUIStore.getState().setView('chat'); useSidePanelStore.getState().show() }
+          if (panelOpen && currentView === 'chat') useSidePanelStore.getState().close()
+          else { useCompareStore.getState().setComparing(false); useUIStore.getState().setView('chat'); useSidePanelStore.getState().showMenu() }
         }} className="rounded-md p-1 text-gray-500 hover:bg-gray-100 aria-pressed:text-blue-500 dark:hover:bg-white/5"><PanelRightOpen size={16} /></button>
         <DownloadBadge />
         <button
-          onClick={() => browserOpen && panelOpen && panelTab === 'browser' && currentView === 'chat' ? useBrowserStore.getState().setOpen(false) : revealBrowser()}
+          onClick={revealBrowser}
           className="p-1 rounded-md text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors aria-pressed:text-blue-500"
           aria-label={uiText('Internal browser')}
           title={uiText('Internal browser')}

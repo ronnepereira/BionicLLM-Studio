@@ -523,7 +523,7 @@ body {
 
 body {
   margin: 0;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: 'Inter', 'Studio Emoji', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
 }
@@ -2761,17 +2761,8 @@ html[data-computer-surface]:not([data-computer-surface='window']) #root {
   }
 }
 
-/* Where the window does not shrink, the bar of computer control lies over
-   the top of the main panel and says how far down it reaches
-   (--computer-bar-clear, ComputerControlHost). In Voice the question of
-   computer control stands above the controls of the session, and in a low
-   window or before the first words that is right under the title row
-   (2.5rem): the transcript keeps the reach of the bar free, and so does the
-   lower part while it stands alone. */
-.lu-voice-transcript {
-  min-height: max(0px, calc(var(--computer-bar-clear, 0px) - 2.5rem));
-}
-.lu-voice-lower--alone {
+/* Leave room for the computer control bar when it overlays the Voice panel. */
+.lu-voice-panel {
   padding-top: max(0.5rem, calc(var(--computer-bar-clear, 0px) - 2rem));
   /* Centred while there is room. In a low window the content starts at the
      top instead of growing out of it on both sides. */
@@ -3003,6 +2994,10 @@ select :is(option, optgroup) { background: var(--studio-popup); color: var(--stu
 .markdown-content li > :is(ul, ol) { margin-top: .5em; }
 .markdown-content :is(th, td) { min-width: 6em; vertical-align: top; overflow-wrap: anywhere; white-space: normal; }
 .markdown-content .markdown-table { overscroll-behavior-x: contain; }
+.markdown-content .katex-display { max-width: 100%; overflow: auto hidden; padding-block: .35em; }
+.markdown-content .contains-task-list { list-style: none; }
+.markdown-content .task-list-item > input { margin-inline-end: .35em; }
+.markdown-content .footnotes { border-top: 1px solid currentColor; margin-top: 1rem; padding-top: .5rem; font-size: .9em; }
 
 /* Plugin choices reserve space for values and switches at every UI font size. */
 .studio-plugins-menu { overflow-wrap: break-word; text-align: left; }
@@ -3013,3 +3008,13 @@ select :is(option, optgroup) { background: var(--studio-popup); color: var(--stu
 .studio-plugins-menu svg { flex-shrink: 0; }
 .studio-plugins-menu [data-testid=group-chat-count] { white-space: normal; }
 .studio-plugins-menu button[aria-pressed] { flex-shrink: 0; }
+
+/* Bundled Unicode color font: Windows flags must render without network access. */
+@font-face {
+  font-family: 'Studio Emoji';
+  src: url('./assets/fonts/NotoColorEmoji.ttf') format('truetype');
+  font-display: swap;
+}
+.studio-emoji { font-family: 'Studio Emoji', sans-serif; }
+[data-lu-composer], .markdown-content, [data-testid=codex-transcript] { font-family: 'Inter', 'Studio Emoji', system-ui, sans-serif; }
+.chat-color-swatch { display: inline-block; width: .9em; height: .9em; margin-inline: .2em; vertical-align: -.05em; border: 1px solid #8888; border-radius: 3px; box-shadow: 0 0 0 1px #8883; }

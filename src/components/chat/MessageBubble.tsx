@@ -40,6 +40,7 @@ import { RefusalNotice } from './RefusalNotice'
 import { RequestUsageLine } from './RequestUsageLine'
 import { fitTextarea } from '../../lib/fit-textarea'
 import { editableText } from '../../lib/message-edit'
+import { MessageTimestamp } from './MessageTimestamp'
 import { ForkSwitcher } from './ForkSwitcher'
 
 interface Props {
@@ -688,6 +689,7 @@ function MessageBubbleImpl({ message, onRegenerate, onEdit, pendingApprovalId, o
             {!isUser && actions.edit && (
               <button onClick={actions.edit} className="p-1 rounded-md text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors" aria-label={uiText("Edit response")} title={uiText("Edit")}><Pencil size={12} /></button>
             )}
+            {!isUser && <MessageTimestamp timestamp={message.timestamp} />}
             {actions.regenerate && (
               <button onClick={actions.regenerate} className="p-1 rounded-md text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors" aria-label={uiText("Regenerate response")} title={uiText("Regenerate")}><RefreshCw size={12} /></button>
             )}

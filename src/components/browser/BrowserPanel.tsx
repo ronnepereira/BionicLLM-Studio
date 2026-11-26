@@ -1,12 +1,53 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, ArrowRight, RotateCw, X, Globe, Loader2, Square, Wrench, Eraser } from 'lucide-react'
+import { ArrowLeft, ArrowRight, RotateCw, X, Globe, Loader2, Square, Wrench, Eraser, Plus } from 'lucide-react'
 import { useUiText } from '../../lib/ui-text'
 import { useBrowserStore } from '../../stores/browserStore'
 import { browserCommand, browserUrl } from '../../api/studio-browser'
 import { isTauri } from '../../api/backend'
 import type { CSSProperties } from 'react'
 
-interface BrowserEvent { url: string; title: string; loading: boolean; canGoBack: boolean; canGoForward: boolean; error: string | null }
+interface BrowserEvent { tabId: string; url: string; title: string; loading: boolean; canGoBack: boolean; canGoForward: boolean; error: string | null }
+
+let pendingHide = Promise.resolve()
+function hideBrowserTab(tabId: string | null) {
+  pendingHide = browserCommand({ action: 'hide', tabId }).then(() => {}, () => {})
+  return pendingHide
+}
+
+export function BrowserTabs() {
+  const { tabs, activeTab, addTab, selectTab, removeTab } = useBrowserStore()
+  const tablist = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    tablist.current?.querySelector('[aria-selected="true"]')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+  }, [activeTab])
+  return <div className="flex min-w-0 flex-1 items-center">
+    <div ref={tablist} role="tablist" aria-label="Abas do navegador" className="flex min-w-0 items-center overflow-x-auto scrollbar-thin" onKeyDown={event => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key) || (event.target as HTMLElement).getAttribute('role') !== 'tab') return
+      event.preventDefault()
+      const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+      const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowLeft' ? -1 : 1) + buttons.length) % buttons.length
+      buttons[next]?.focus()
+      buttons[next]?.click()
+    }}>
+      {tabs.map(({ id, title }, index) => {
+        const label = title || (tabs.length === 1 ? 'Navegador' : `Nova aba ${index + 1}`)
+        const selected = id === activeTab
+        return <div key={id} role="presentation" className={`flex min-h-11 shrink-0 items-center gap-0.5 border-b-2 pl-2 pr-1 ${selected ? 'border-blue-500 text-blue-500' : 'border-transparent text-gray-600 dark:text-gray-300'}`}>
+          <button type="button" id={`browser-tab-${id}`} role="tab" aria-selected={selected} aria-controls={selected ? 'browser-tab-content' : undefined} tabIndex={selected ? 0 : -1} title={label} onClick={() => selectTab(id)} className="flex min-w-0 max-w-40 items-center gap-1.5 rounded py-1.5 hover:bg-gray-100 dark:hover:bg-white/10"><Globe size={14} className="shrink-0" /><span className="truncate text-xs">{label}</span></button>
+          <button type="button" title={`Fechar ${label}`} aria-label={`Fechar ${label}`} onClick={() => {
+            removeTab(id)
+            if (isTauri()) void browserCommand({ action: 'close_tab', tabId: id }).catch(error => {
+              if (useBrowserStore.getState().activeTab) useBrowserStore.setState({ error: String(error) })
+            })
+            tablist.current?.querySelector<HTMLButtonElement>(`#browser-tab-${useBrowserStore.getState().activeTab}`)?.focus()
+          }} className="shrink-0 rounded p-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-white/10"><X size={14} /></button>
+        </div>
+      })}
+    </div>
+    <button type="button" title="Nova aba" aria-label="Nova aba" onClick={addTab} className="ml-1 shrink-0 rounded p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-white/10"><Plus size={16} /></button>
+  </div>
+}
 
 export function BrowserResizeHandle() {
   const text = useUiText()
@@ -46,7 +87,7 @@ export function BrowserResizeHandle() {
 
 export function BrowserPanel({ embedded = false, active = true }: { embedded?: boolean; active?: boolean }) {
   const text = useUiText()
-  const { url, title, loading, error, canGoBack, canGoForward, setOpen } = useBrowserStore()
+  const { url, title, loading, error, canGoBack, canGoForward, setOpen, activeTab, ready } = useBrowserStore()
   const size = useBrowserStore(s => s.size)
   const [address, setAddress] = useState(url)
   const [toolsOpen, setToolsOpen] = useState(false)
@@ -56,12 +97,13 @@ export function BrowserPanel({ embedded = false, active = true }: { embedded?: b
     if (clearingCache) return
     setClearingCache(true)
     setCacheNotice('')
+    const tabId = activeTab
     useBrowserStore.setState({ ownerToken: null, error: null })
     try {
-      await browserCommand({ action: 'clear_cache' })
+      await browserCommand({ action: 'clear_cache', ...(tabId ? { tabId } : {}) })
       setCacheNotice(text('Browser cache cleared.'))
     } catch (error) {
-      useBrowserStore.setState({ error: error instanceof Error ? error.message : String(error) })
+      if (useBrowserStore.getState().activeTab === tabId) useBrowserStore.setState({ error: error instanceof Error ? error.message : String(error) })
     } finally { setClearingCache(false) }
   }
   const host = useRef<HTMLDivElement>(null)
@@ -72,11 +114,13 @@ export function BrowserPanel({ embedded = false, active = true }: { embedded?: b
       if (action === 'navigate') {
         const url = browserUrl(target || '')
         useBrowserStore.setState({ loading: true })
-        await browserCommand({ action, url })
-      } else await browserCommand({ action })
-    } catch (error) { useBrowserStore.setState({ loading: false, error: error instanceof Error ? error.message : String(error) }) }
+        await browserCommand({ action, url, tabId: activeTab })
+      } else await browserCommand({ action, tabId: activeTab })
+    } catch (error) {
+      if (useBrowserStore.getState().activeTab === activeTab) useBrowserStore.setState({ loading: false, error: error instanceof Error ? error.message : String(error) })
+    }
   }
-  useEffect(() => { setAddress(url) }, [url])
+  useEffect(() => { setAddress(url) }, [url, activeTab])
   useEffect(() => {
     if (!isTauri() || !active) return
     let disposed = false
@@ -90,24 +134,28 @@ export function BrowserPanel({ embedded = false, active = true }: { embedded?: b
       if (pending) { again = true; return }
       pending = true
       try {
+        await pendingHide
+        if (disposed || !host.current) return
         const box = host.current.getBoundingClientRect()
         const blocked = [...document.querySelectorAll('[role="dialog"][data-studio-dialog], [aria-modal="true"], dialog[open]')].some(element => element.getClientRects().length > 0)
         if (blocked || box.width < 1 || box.height < 1 || document.visibilityState === 'hidden') {
-          if (opened) await browserCommand({ action: 'hide' })
-          useBrowserStore.setState({ ready: false })
+          if (opened) {
+            await hideBrowserTab(activeTab)
+            opened = false
+          }
+          if (!disposed) useBrowserStore.setState({ ready: false })
           return
         }
         const scale = window.devicePixelRatio
         const bounds = { x: Math.round(box.left * scale), y: Math.round(box.top * scale), width: Math.floor(box.width * scale), height: Math.floor(box.height * scale) }
-        await browserCommand({ action: opened ? 'layout' : 'open', bounds })
+        await browserCommand({ action: opened ? 'layout' : 'open', bounds, tabId: activeTab })
         opened = true
         if (!disposed) useBrowserStore.setState({ ready: true })
       } catch (error) {
         if (!disposed) useBrowserStore.setState({ ready: false, error: error instanceof Error ? error.message : String(error) })
       } finally {
         pending = false
-        if (disposed) { if (opened) void browserCommand({ action: 'hide' }).catch(() => {}) }
-        else if (again) { again = false; void layout() }
+        if (!disposed && again) { again = false; void layout() }
       }
     }
     const scheduleLayout = () => { clearTimeout(timer); timer = setTimeout(() => { void layout() }, 40) }
@@ -124,7 +172,12 @@ export function BrowserPanel({ embedded = false, active = true }: { embedded?: b
     void (async () => {
       const { listen } = await import('@tauri-apps/api/event')
       const unsubscribe = await listen<BrowserEvent>('studio-browser-state', event => {
-        if (!disposed) useBrowserStore.setState(event.payload)
+        if (disposed) return
+        const { tabId, ...page } = event.payload
+        useBrowserStore.setState(state => ({
+          tabs: state.tabs.map(tab => tab.id === tabId && tab.title !== page.title ? { ...tab, title: page.title } : tab),
+          ...((state.activeTab ?? 'legacy') === tabId ? page : {}),
+        }))
       })
       if (disposed) { unsubscribe(); return }
       off = unsubscribe
@@ -134,18 +187,18 @@ export function BrowserPanel({ embedded = false, active = true }: { embedded?: b
       disposed = true; off?.(); resize.disconnect(); mutations.disconnect(); clearTimeout(timer)
       window.removeEventListener('resize', scheduleLayout)
       document.removeEventListener('visibilitychange', scheduleLayout)
-      useBrowserStore.setState({ ready: false })
-      if (opened) void browserCommand({ action: 'hide' }).catch(() => {})
+      if (useBrowserStore.getState().activeTab === activeTab) useBrowserStore.setState({ ready: false, ownerToken: null })
+      if (opened || pending) void hideBrowserTab(activeTab)
     }
-  }, [active])
+  }, [active, activeTab])
   const control = 'rounded-md p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-white/10 disabled:opacity-30'
-  return <aside aria-label={text('Internal browser')} style={{ '--browser-size': `${size}%` } as CSSProperties} className={`flex min-h-0 min-w-0 flex-col overflow-hidden bg-white dark:bg-[#1e1e1e] ${embedded ? 'h-full w-full' : 'rounded-xl ring-1 ring-black/[0.04] dark:ring-white/[0.05] max-[999px]:h-[var(--browser-size)] min-[1000px]:w-[var(--browser-size)] shrink-0'}`}>
-    <div className="flex items-center gap-2 border-b border-gray-200 dark:border-white/10 px-3 py-2"><Globe size={15} className="shrink-0" /><span className="flex-1 truncate text-xs font-medium">{title || text('Internal browser')}</span><button className={control} onClick={() => setOpen(false)} title={text('Close browser panel')} aria-label={text('Close browser panel')}><X size={15} /></button></div>
+  return <aside {...(embedded && activeTab ? { id: 'browser-tab-content', role: 'tabpanel', 'aria-labelledby': `browser-tab-${activeTab}` } : { 'aria-label': text('Internal browser') })} style={{ '--browser-size': `${size}%` } as CSSProperties} className={`flex min-h-0 min-w-0 flex-col overflow-hidden bg-white dark:bg-[#1e1e1e] ${embedded ? 'h-full w-full' : 'rounded-xl ring-1 ring-black/[0.04] dark:ring-white/[0.05] max-[999px]:h-[var(--browser-size)] min-[1000px]:w-[var(--browser-size)] shrink-0'}`}>
+    {!embedded && <div className="flex items-center gap-2 border-b border-gray-200 dark:border-white/10 px-3 py-2"><Globe size={15} className="shrink-0" /><span className="flex-1 truncate text-xs font-medium">{title || text('Internal browser')}</span><button className={control} onClick={() => setOpen(false)} title={text('Close browser panel')} aria-label={text('Close browser panel')}><X size={15} /></button></div>}
     <div className="flex items-center gap-1 border-b border-gray-200 dark:border-white/10 px-2 py-2">
       <button className={control} disabled={!canGoBack} onClick={() => { void manual('back') }} title={text('Go back')} aria-label={text('Go back')}><ArrowLeft size={15} /></button>
       <button className={control} disabled={!canGoForward} onClick={() => { void manual('forward') }} title={text('Go forward')} aria-label={text('Go forward')}><ArrowRight size={15} /></button>
       <button className={control} onClick={() => { void manual(loading ? 'stop' : 'reload') }} title={loading ? text('Stop loading') : text('Reload page')} aria-label={loading ? text('Stop loading') : text('Reload page')}>{loading ? <Square size={13} /> : <RotateCw size={14} />}</button>
-      <form className="min-w-0 flex-1" onSubmit={event => { event.preventDefault(); void manual('navigate', address) }}><input type="text" aria-label={text('Website address')} placeholder={text('Enter a website, for example google.com')} className="w-full min-w-0 rounded-lg border border-gray-300 dark:border-white/15 bg-gray-50 dark:bg-black/15 px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-blue-500" value={address} onChange={event => setAddress(event.target.value)} autoCapitalize="off" spellCheck={false} /></form>
+      <form className="min-w-0 flex-1" onSubmit={event => { event.preventDefault(); if (ready || !isTauri()) void manual('navigate', address) }}><input type="text" aria-label={text('Website address')} placeholder={text('Enter a website, for example google.com')} className="w-full min-w-0 rounded-lg border border-gray-300 dark:border-white/15 bg-gray-50 dark:bg-black/15 px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-blue-500" value={address === 'about:blank' ? '' : address} onChange={event => setAddress(event.target.value)} autoCapitalize="off" spellCheck={false} /></form>
       <button className={control} onClick={() => setToolsOpen(open => !open)} aria-expanded={toolsOpen} aria-controls="browser-tools" title={text('Browser tools')} aria-label={text('Browser tools')}><Wrench size={15} className="text-blue-500" /></button>
       {loading && <Loader2 size={13} className="animate-spin shrink-0" aria-label={text('Loading page')} />}
     </div>

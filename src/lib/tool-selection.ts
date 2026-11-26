@@ -1,4 +1,5 @@
 import { asksForStudioManagement, STUDIO_TOOL_NAMES } from './studio-capabilities'
+import { asksForRemotion, REMOTION_TOOL_NAMES } from './plugins/remotion-tools'
 /**
  * Intelligent Tool Selection — reduce token usage by only including relevant tools.
  *
@@ -349,6 +350,7 @@ export function selectRelevantTools(
   const msg = userMessage.toLowerCase()
   const selectedNames = new Set<string>(ALWAYS_INCLUDE)
   if (asksForStudioManagement(userMessage)) for (const name of STUDIO_TOOL_NAMES) selectedNames.add(name)
+  if (asksForRemotion(userMessage)) for (const name of REMOTION_TOOL_NAMES) selectedNames.add(name)
   for (const name of connectorToolNames(msg)) selectedNames.add(name)
 
   // Match tool groups by keywords
@@ -464,7 +466,7 @@ export function selectRelevantTools(
 
   // Small-Model Mode (Knob 1): cap the catalog when maxTools is set. No-op
   // (returns `selected` unchanged) when unset — default behaviour preserved.
-  return applyMaxTools(selected, maxTools, undefined, mentionedToolNames(userMessage, allTools))
+  return applyMaxTools(selected, maxTools, undefined, [...mentionedToolNames(userMessage, allTools), ...(asksForRemotion(userMessage) ? REMOTION_TOOL_NAMES : [])])
 }
 
 /**
@@ -637,7 +639,7 @@ export async function selectRelevantToolsAsync(
 ): Promise<MCPToolDefinition[]> {
   const threshold = opts?.embeddingThreshold ?? EMBEDDING_ROUTING_THRESHOLD
   const available = allTools.filter((t) => permissions[t.category] !== 'blocked')
-  const pinned = [...mentionedToolNames(userMessage, available), ...(asksForStudioManagement(userMessage) ? STUDIO_TOOL_NAMES : [])]
+  const pinned = [...mentionedToolNames(userMessage, available), ...(asksForStudioManagement(userMessage) ? STUDIO_TOOL_NAMES : []), ...(asksForRemotion(userMessage) ? REMOTION_TOOL_NAMES : [])]
   if (!opts?.embed || available.length <= threshold) {
     return applyMaxTools(selectRelevantTools(userMessage, allTools, permissions, undefined, opts?.reaText), opts?.maxTools, undefined, pinned)
   }

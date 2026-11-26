@@ -27,6 +27,7 @@ export const CREATE_GROUP_REASON = 'Not available in a group chat.'
 // REA's row loads in the desktop app only, in a chunk of its own: its name
 // and texts stay out of every bundle a browser opens.
 const ReaPluginRow = lazy(() => import('./ReaPluginRow').then((m) => ({ default: m.ReaPluginRow })))
+const RemotionPluginRow = lazy(() => import('./RemotionPluginRow').then(m => ({ default: m.RemotionPluginRow })))
 
 const CAVEMAN_MODES: { value: CavemanMode; label: string; desc: string }[] = [
   { value: 'off', label: 'Off', desc: 'Normal responses' },
@@ -140,7 +141,9 @@ export function PluginsDropdown({
   // only where its tools go: Agent and Code.
   const reaShown = reaInPlugins(isTauri(), agentTools)
   const reaOn = useSettingsStore((s) => s.settings.reaPluginEnabled === true) && reaShown
-  const anyPluginActive = !!(isCavemanActive || isPersonaActive || isGroupActive || createOn || reaOn)
+  const remotionShown = isTauri()
+  const remotionOn = useSettingsStore(s => s.settings.remotionPluginEnabled === true) && remotionShown
+  const anyPluginActive = !!(isCavemanActive || isPersonaActive || isGroupActive || createOn || reaOn || remotionOn)
 
   return (
     <div className="relative">
@@ -177,6 +180,7 @@ export function PluginsDropdown({
             <div className="flex gap-0.5">
               {createOn && <div data-testid="plugins-dot-create" className="w-1 h-1 rounded-full bg-lu-accent" />}
               {reaOn && <div data-testid="plugins-dot-rea" className="w-1 h-1 rounded-full bg-teal-400" />}
+              {remotionOn && <div data-testid="plugins-dot-remotion" className="w-1 h-1 rounded-full bg-blue-400" />}
               {/* Rosa, nicht mehr Bernstein: die vier Punkte sind Kategorien,
                   keine Zustaende, und Gelb hat hier nie eine Warnung gemeint.
                   Blau, Gruen und Violett waren schon vergeben, Rot gehoert
@@ -240,6 +244,7 @@ export function PluginsDropdown({
 
             {/* ── REA, reverse engineering for the agents ────── */}
             {reaShown && <Suspense fallback={null}><ReaPluginRow /></Suspense>}
+            {remotionShown && <Suspense fallback={null}><RemotionPluginRow /></Suspense>}
 
             <div className="border-t border-gray-200 dark:border-white/[0.06] my-1" />
 

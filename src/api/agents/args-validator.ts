@@ -303,6 +303,12 @@ function tryCoerce(
     if (value !== undefined && value !== null) return { ok: true, value: [value] }
     return { ok: false }
   }
+  if (type === 'object' && typeof value === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(value)
+      if (isJsonObject(parsed)) return { ok: true, value: parsed }
+    } catch { /* Malformed JSON remains a validation error. */ }
+  }
   return { ok: false }
 }
 

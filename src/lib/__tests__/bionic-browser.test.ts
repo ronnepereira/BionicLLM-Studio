@@ -15,7 +15,7 @@ import { browserRoutingText } from '../browser-intent'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-beforeEach(() => useBrowserStore.setState({ ownerToken: null, open: false }))
+beforeEach(() => useBrowserStore.setState({ ownerToken: null, open: false, tabs: [], activeTab: null, error: null }))
 afterEach(() => vi.restoreAllMocks())
 
 describe('internal browser boundaries and routing', () => {
@@ -30,10 +30,16 @@ describe('internal browser boundaries and routing', () => {
     useBrowserStore.setState({ error: null })
     await expect(waitForBrowser(() => true)).resolves.toBeUndefined()
   })
+  it('interrupts a pending browser operation when the user switches tabs', async () => {
+    useBrowserStore.setState({ open: true, activeTab: 'first' })
+    const pending = waitForBrowser(() => false)
+    useBrowserStore.setState({ activeTab: 'second' })
+    await expect(pending).rejects.toThrow('A aba do navegador mudou')
+  })
   it('opens a local preview in the calling run workspace and returns server errors', async () => {
     vi.spyOn(backend, 'isTauri').mockReturnValue(true)
     vi.spyOn(backend, 'isMobile').mockReturnValue(false)
-    vi.spyOn(browserApi, 'browserReady').mockResolvedValue()
+    vi.spyOn(browserApi, 'browserReady').mockResolvedValue('preview-tab')
     vi.spyOn(browserApi, 'waitForBrowser').mockResolvedValue()
     const command = vi.spyOn(browserApi, 'browserCommand').mockResolvedValue({ ok: true })
     const run = beginAgentRun({ conversationId: 'preview', chatId: 'preview-slug', workspace: { kind: 'folder', path: 'C:/Projects/timer' } })
@@ -41,7 +47,7 @@ describe('internal browser boundaries and routing', () => {
     registerBrowserTools(registry)
     try {
       await registry.execute('browser_open', { path: 'pomodoro.html' }, 0, run)
-      expect(command).toHaveBeenCalledWith({ action: 'preview', path: 'pomodoro.html', chatId: 'preview-slug', workingDirectory: 'C:/Projects/timer' })
+      expect(command).toHaveBeenCalledWith({ action: 'preview', path: 'pomodoro.html', chatId: 'preview-slug', workingDirectory: 'C:/Projects/timer', tabId: 'preview-tab' })
       command.mockRejectedValueOnce(new Error('Arquivo HTML não encontrado'))
       expect(await registry.execute('browser_open', { path: 'missing.html' }, 0, run)).toContain('Error: Arquivo HTML não encontrado')
       expect(useBrowserStore.getState().loading).toBe(false)
@@ -60,7 +66,7 @@ describe('internal browser boundaries and routing', () => {
     const command = vi.spyOn(browserApi, 'browserCommand').mockImplementation(async request => request.action === 'read'
       ? { token: `page-${++reads}`, text: 'Resultados', elements: [{ ref: 'e1', label: 'Pesquisar' }] }
       : { ok: true })
-    useBrowserStore.setState({ open: true, ready: true, error: null })
+    useBrowserStore.setState({ open: true, ready: true, activeTab: 'search-tab' })
     const run = beginAgentRun({ conversationId: 'search' })
     const registry = new ToolRegistry()
     registerBrowserTools(registry)
@@ -69,7 +75,7 @@ describe('internal browser boundaries and routing', () => {
       expect(first.token).toBe('page-1')
       const next = JSON.parse(await registry.execute('browser_action', { action: 'press', token: first.token, target: 'e1', text: 'Enter' }, 0, run))
       expect(next.token).toBe('page-2')
-      expect(command).toHaveBeenCalledWith({ action: 'press', token: 'page-1', target: 'e1', text: 'Enter' })
+      expect(command).toHaveBeenCalledWith({ action: 'press', token: 'page-1', target: 'e1', text: 'Enter', tabId: 'search-tab' })
       expect(command.mock.calls.filter(([request]) => request.action === 'press')).toHaveLength(1)
       command.mockImplementation(async request => request.action === 'read'
         ? { token: 'scroll-result', pageScroll: { atTop: true }, text: 'Página' }

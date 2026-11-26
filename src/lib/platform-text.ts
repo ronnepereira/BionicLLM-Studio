@@ -92,11 +92,11 @@ const TEXTS = {
     mobile: 'The engine on this device is switched off. Turn it back on in Settings, or pick an LU Cloud model.',
   },
   engineModelFileMissing: {
-    desktop: 'The LU Engine has no model file named "{name}". It may have been deleted, moved, or the download did not finish. Open Models, Get new and download it again, then pick it in the chat.',
+    desktop: 'The BU Engine has no model file named "{name}". It may have been deleted, moved, or the download did not finish. Open Models, Get new and download it again, then pick it in the chat.',
     mobile: 'The model file "{name}" is not on this device. It may have been deleted, or the download did not finish. Open Models and download it again, then pick it in the chat.',
   },
   engineModelFileMissingShort: {
-    desktop: 'The LU Engine has no model file named "{name}". It may have been deleted, moved, or the download did not finish. Open Models, Get new and download it again.',
+    desktop: 'The BU Engine has no model file named "{name}". It may have been deleted, moved, or the download did not finish. Open Models, Get new and download it again.',
     mobile: 'The model file "{name}" is not on this device. It may have been deleted, or the download did not finish. Open Models and download it again.',
   },
   engineNoChatModel: {

@@ -24,6 +24,7 @@ const save = (items: StudioSchedule[]) => { localStorage.setItem(SCHEDULE_KEY, J
 // Models the browser's exclusive cross-window locks, including ifAvailable.
 beforeEach(() => {
   localStorage.clear()
+  useAgentProfileStore.setState({ profiles: [] })
   useScheduleStore.setState({ items: [], error: null })
   const held = new Set<string>()
   const queues = new Map<string, Promise<unknown>>()
@@ -36,6 +37,29 @@ beforeEach(() => {
     queues.set(name, run.catch(() => {}))
     return run
   } } })
+})
+
+it('deleting an agenda removes its agent and sibling agendas, preserving unrelated agents', async () => {
+  const id = useAgentProfileStore.getState().add('Clima', 'Informe o clima.', agent.model)
+  const other = useAgentProfileStore.getState().add('Outro', 'Informe a hora.', agent.model)
+  const profile = useAgentProfileStore.getState().profiles.find(row => row.id === id)!
+  save([item({ id: 'first', agent: profile }), item({ id: 'sibling', agent: profile }), item({ id: 'unrelated', agent: { ...agent, id: other } })])
+  await useScheduleStore.getState().remove('first')
+  useScheduleStore.getState().refresh()
+  await useAgentProfileStore.persist.rehydrate()
+  expect(useScheduleStore.getState().items.map(row => row.id)).toEqual(['unrelated'])
+  expect(useAgentProfileStore.getState().profiles.map(row => row.id)).toEqual([other])
+})
+
+it('keeps the linked agent if deleting its agenda cannot be saved', async () => {
+  const id = useAgentProfileStore.getState().add('Clima', 'Informe o clima.', agent.model)
+  save([item({ agent: useAgentProfileStore.getState().profiles[0] })])
+  const failure = vi.spyOn(localStorage, 'setItem').mockImplementation(() => { throw new Error('disk full') })
+  try {
+    await expect(useScheduleStore.getState().remove('task-test')).rejects.toThrow('disk full')
+    expect(useAgentProfileStore.getState().profiles.some(row => row.id === id)).toBe(true)
+    expect(useScheduleStore.getState().items).toHaveLength(1)
+  } finally { failure.mockRestore() }
 })
 
 describe('schedule time calculations', () => {

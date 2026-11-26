@@ -38,7 +38,10 @@ jobs:
       - run: npm ci
       - run: node --test scripts/bionic-publication.test.mjs
       - run: node scripts/bionic-publication.mjs audit
-      - run: npm run typecheck
+      - name: Type-check the source
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: npm run typecheck
       - name: Lint publication and updater code
         run: npx eslint scripts/bionic-*.mjs src/stores/updateStore.ts src/components/settings/AppUpdatesSettings.tsx src/components/settings/__tests__/bionic-app-updates.test.tsx src/stores/__tests__/bionic-private-updates.test.ts
       - run: npx vitest run src/stores/__tests__/bionic-private-updates.test.ts src/components/settings/__tests__/bionic-app-updates.test.tsx src/stores/__tests__/updateStore.test.ts src/stores/__tests__/updateStore-autodownload.test.ts src/stores/__tests__/update-restarts-the-app.test.ts src/stores/__tests__/update-flushes-the-chats.test.ts

@@ -6,7 +6,7 @@ Two kinds of things are listed here. The Rust crates and npm packages are built 
 
 ## Attribution
 
-The speech output and most of its voices are licensed under Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/). The credit lines, as the Voice setup and the Voice settings show them for the chosen voice:
+Pocket TTS and most of its voice options are licensed under Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/). These credit lines appear in Voice setup and settings for the chosen voice.
 
 - Pocket TTS by Kyutai, licensed under CC BY 4.0.
 - Voice "alba" from recordings by Alba MacKenna (kyutai/tts-voices, alba-mackenna/casual.wav), licensed under CC BY 4.0.
@@ -34,9 +34,14 @@ Pocket TTS ships more voices than LU offers. Left out on purpose: "cosette" (Exp
 
 ## Models
 
+The EdgeTTS voice options use Microsoft's online speech service. The app lists this notice for each option: “EdgeTTS usa o serviço de voz online da Microsoft. Requer internet.”
+
 | Model | License | Source | Fetched |
 | --- | --- | --- | --- |
-| Whisper base.en (CTranslate2) | MIT | https://huggingface.co/Systran/faster-whisper-base.en | by the Voice setup, revision 3d3d5dee2648 |
+| Whisper base multilíngue (português) | MIT | https://huggingface.co/Systran/faster-whisper-base | by the Voice setup, revision ebe41f70d5b6 |
+| EdgeTTS - Francisca | Hosted service | Microsoft Edge TTS, `pt-BR-FranciscaNeural` | Synthesized online, no model download |
+| EdgeTTS - Antônio | Hosted service | Microsoft Edge TTS, `pt-BR-AntonioNeural` | Synthesized online, no model download |
+| EdgeTTS - Thalita Multilingual | Hosted service | Microsoft Edge TTS, `pt-BR-ThalitaMultilingualNeural` | Synthesized online, no model download |
 | Kyutai Pocket TTS, English | CC-BY-4.0 | https://huggingface.co/kyutai/pocket-tts-without-voice-cloning | by the Voice setup, revision d29db7978e46 |
 | alba | CC-BY-4.0 | https://huggingface.co/kyutai/tts-voices/blob/main/alba-mackenna/casual.wav | by the Voice setup, revision e041936c7547 |
 | anna | CC-BY-4.0 | https://huggingface.co/kyutai/tts-voices/blob/main/vctk/p228_023_enhanced.wav | when the user picks this voice, revision e041936c7547 |
@@ -89,6 +94,7 @@ Installed by pip from pypi.org (torch for Windows and Linux from download.pytorc
 | ctranslate2 | 4.8.2 | MIT |  |
 | docopt | 0.6.2 | MIT |  |
 | docstring-parser | 0.18.0 | MIT |  |
+| edge-tts | 7.3.1 | LGPL-3.0 and MIT | Microsoft Edge TTS client. MIT applies to `srt_composer.py`. [License at 7.3.1](https://github.com/rany2/edge-tts/blob/7.3.1/LICENSE) |
 | einops | 0.8.2 | MIT |  |
 | fastapi | 0.142.2 | MIT |  |
 | faster-whisper | 1.2.1 | MIT |  |
@@ -153,6 +159,7 @@ Installed by pip from pypi.org (torch for Windows and Linux from download.pytorc
 | soxr | 1.0.0 | LGPL-2.1-or-later |  |
 | starlette | 1.7.0 | BSD-3-Clause |  |
 | sympy | 1.14.0 | BSD-3-Clause |  |
+| tabulate | 0.9.0 | MIT | Dependency of edge-tts. [Release metadata](https://pypi.org/project/tabulate/0.9.0/) |
 | tokenizers | 0.23.2 | Apache-2.0 |  |
 | torch | 2.14.1 | Apache-2.0 AND Apache-2.0 WITH LLVM-exception AND BSD-2-Clause AND BSD-3-Clause AND BSL-1.0 AND MIT | macOS |
 | torch | 2.14.1+cpu | Apache-2.0 AND Apache-2.0 WITH LLVM-exception AND BSD-2-Clause AND BSD-3-Clause AND BSL-1.0 AND MIT | Windows and Linux, CPU build |

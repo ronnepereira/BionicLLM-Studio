@@ -145,12 +145,12 @@ describe('desktop explicit choice and runtime handoffs', () => {
     useModelStore.getState().setModels(rows)
     expect(useModelStore.getState().activeModel).toBe(QWEN_LOCAL)
   })
-  it('startup forgets the active selection while retaining remembered mode picks', () => {
+  it('startup restores the active selection and remembers its mode pick', () => {
     useModelStore.setState({ activeModel: QWEN_LOCAL, lastLocalModel: null })
     const state = useModelStore.getState()
     const completed = useModelStore.persist.getOptions().onRehydrateStorage?.(state)
     completed?.(state, undefined)
-    expect(state.activeModel).toBeNull()
+    expect(state.activeModel).toBe(QWEN_LOCAL)
     expect(state.lastLocalModel).toBe(QWEN_LOCAL)
   })
   it('mode switching still restores the selected local model at runtime', () => {

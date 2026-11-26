@@ -57,6 +57,7 @@
  */
 import { useAgentTaskStore } from '../stores/agentTaskStore'
 import { useGenerationStore } from '../stores/generationStore'
+import { useComposerQueueStore } from '../stores/composerQueueStore'
 import { useAgentLoopStore } from '../stores/agentLoopStore'
 import { stopRun } from './run-stop'
 // Not `api/backend`: that one imports settingsStore, and this module is loaded
@@ -73,6 +74,7 @@ import { useBackgroundShutdownStore } from '../stores/backgroundShutdownStore'
  * gerade offenen Tab.
  */
 export function stopAllBackgroundWork(): void {
+  useComposerQueueStore.setState({ messages: {} })
   const ids = new Set<string>()
   for (const convId of Object.keys(useAgentTaskStore.getState().byConv)) ids.add(convId)
   for (const convId of Object.keys(useGenerationStore.getState().generating)) ids.add(convId)

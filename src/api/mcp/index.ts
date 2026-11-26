@@ -37,3 +37,13 @@ if (isTauri()) {
     if (on !== (before.settings.reaPluginEnabled === true)) syncRea(on)
   })
 }
+
+if (isTauri()) {
+  const sync = (on: boolean, root: string) => void import('../../lib/plugins/remotion-runtime').then(m => m.syncRemotionPlugin(on, root))
+  const settings = useSettingsStore.getState().settings
+  if (settings.remotionPluginEnabled === true) sync(true, settings.remotionProjectPath || 'C:\\RemotionApp')
+  useSettingsStore.subscribe((state, before) => {
+    const on = state.settings.remotionPluginEnabled === true
+    if (on !== (before.settings.remotionPluginEnabled === true) || (on && state.settings.remotionProjectPath !== before.settings.remotionProjectPath)) sync(on, state.settings.remotionProjectPath || 'C:\\RemotionApp')
+  })
+}

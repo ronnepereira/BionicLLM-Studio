@@ -53,12 +53,12 @@ async function pause(milliseconds: number, signal?: AbortSignal): Promise<void> 
   })
 }
 
-async function readPage(signal?: AbortSignal): Promise<Record<string, unknown>> {
+async function readPage(tabId: string | null, signal?: AbortSignal): Promise<Record<string, unknown>> {
   for (let attempt = 0; ; attempt++) {
-    await waitForBrowser(() => !useBrowserStore.getState().loading, signal)
-    const stop = () => { void browserCommand({ action: 'stop' }).catch(() => {}) }
+    await waitForBrowser(() => !useBrowserStore.getState().loading, signal, tabId)
+    const stop = () => { void browserCommand({ action: 'stop', tabId }).catch(() => {}) }
     signal?.addEventListener('abort', stop, { once: true })
-    try { return await browserCommand({ action: 'read' }) }
+    try { return await browserCommand({ action: 'read', tabId }) }
     catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       if (attempt >= 2 || !/A página mudou|ainda não está pronto|ainda está carregando/.test(message)) throw error
@@ -68,10 +68,10 @@ async function readPage(signal?: AbortSignal): Promise<Record<string, unknown>> 
   }
 }
 
-async function actionObservation(action: string, signal?: AbortSignal, outcome: Record<string, unknown> = {}): Promise<string> {
+async function actionObservation(action: string, tabId: string | null, signal?: AbortSignal, outcome: Record<string, unknown> = {}): Promise<string> {
   try {
     await pause(150, signal)
-    return JSON.stringify({ ok: true, action, ...outcome, ...await readPage(signal) })
+    return JSON.stringify({ ok: true, action, ...outcome, ...await readPage(tabId, signal) })
   } catch (error) {
     if (signal?.aborted) throw error
     // The action already happened. A delayed page must never invite replaying a submit.
@@ -94,29 +94,30 @@ export function registerBrowserTools(registry: ToolRegistry) {
             ? { action: 'preview', path: args.path, chatId: getActiveChatId(run), workingDirectory: workspace?.kind === 'folder' ? workspace.path : undefined }
             : { action: 'navigate', url: browserUrl(args.url as string) }
           useBrowserStore.setState({ error: null })
-          await browserReady(abort)
+          const tabId = await browserReady(abort)
           if (abort?.aborted) throw new Error('Navegação cancelada pelo usuário.')
           useBrowserStore.setState({ loading: true, error: null })
-          const stop = () => { void browserCommand({ action: 'stop' }).catch(() => {}) }
+          const stop = () => { void browserCommand({ action: 'stop', tabId }).catch(() => {}) }
           abort?.addEventListener('abort', stop, { once: true })
           try {
-            await browserCommand(request)
-            await waitForBrowser(() => !useBrowserStore.getState().loading, abort)
+            await browserCommand({ ...request, tabId })
+            await waitForBrowser(() => !useBrowserStore.getState().loading, abort, tabId)
           } finally { abort?.removeEventListener('abort', stop) }
-          return await actionObservation('open', abort)
+          return await actionObservation('open', tabId, abort)
         }
         if (!useBrowserStore.getState().open || !useBrowserStore.getState().ready) throw new Error('Abra o site com browser_open antes de interagir.')
-        await waitForBrowser(() => !useBrowserStore.getState().loading, abort)
+        const { activeTab: tabId } = useBrowserStore.getState()
+        await waitForBrowser(() => !useBrowserStore.getState().loading, abort, tabId)
         if (abort?.aborted) throw new Error('Navegação cancelada pelo usuário.')
-        if (tool.name === 'browser_read') return JSON.stringify(await readPage(abort))
+        if (tool.name === 'browser_read') return JSON.stringify(await readPage(tabId, abort))
         const request = browserActionArgs(args)
-        const stop = () => { void browserCommand({ action: 'stop' }).catch(() => {}) }
+        const stop = () => { void browserCommand({ action: 'stop', tabId }).catch(() => {}) }
         abort?.addEventListener('abort', stop, { once: true })
         try {
           let outcome: Record<string, unknown> = {}
           if (request.action === 'wait') await pause(request.milliseconds as number, abort)
-          else outcome = await browserCommand(request)
-          return await actionObservation(String(request.action), abort, outcome)
+          else outcome = await browserCommand({ ...request, tabId })
+          return await actionObservation(String(request.action), tabId, abort, outcome)
         }
         finally { abort?.removeEventListener('abort', stop) }
       } catch (error) {

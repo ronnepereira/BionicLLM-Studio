@@ -46,6 +46,8 @@ describe('Unteragenten-Kappen', () => {
   it('die Begruendung bleibt bei den Feldern stehen', () => {
     // Der Grund fuer die kleinen Vorgaben ist keine Formalie: ein Sub-Agent
     // laeuft unbeaufsichtigt, und „0 = unbegrenzt" waere dort eine Falle.
-    expect(JSX).toContain('runs unattended')
+    expect(JSX).toContain('A regular delegated sub-agent stops at this limit.')
+    expect(JSX).toContain('automatically continue with preserved context while making progress')
+    expect(JSX).toContain('Agent permissions also apply to every team member.')
   })
 })
