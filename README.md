@@ -13,6 +13,8 @@ Um modelo é a IA que responde às suas mensagens ou gera conteúdo. Para começ
 - **No seu computador.** Vá em **Modelos → Obter novo** para baixar um modelo. Se você já tiver um arquivo **GGUF**, abra-o em **Modelos → Arquivo GGUF**. O app também pode se conectar ao Ollama ou LM Studio. Depois de baixar um modelo local, você pode conversar sem internet. O desempenho depende do seu computador.
 - **Pela internet.** Vá em **Configurações → Provedores** para conectar um serviço de IA. Alguns serviços pedem uma chave de acesso ou cobram pelo uso.
 
+O BionicLLM Studio também aceita modelos **sem censura** (*uncensored*). Os filtros de conteúdo dependem do modelo e, se você usar um serviço pela internet, das regras desse serviço.
+
 No **Chat**, clique em **Escolher modelo** ao lado da caixa de mensagem. Você pode trocar de modelo quando precisar.
 
 | Onde | O que você pode fazer |
