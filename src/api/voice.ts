@@ -261,8 +261,8 @@ export async function transcribeAudio(audioBlob: Blob): Promise<string> {
     const buffer = await audioBlob.arrayBuffer();
     const bytes = new Uint8Array(buffer);
     let binary = "";
-    for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]);
+    for (let i = 0; i < bytes.length; i += 16_384) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + 16_384));
     }
     const audioBase64 = btoa(binary);
     // Tauri maps the Rust snake_case params (audio_base64, content_type) to
@@ -307,6 +307,13 @@ export async function transcribeAudio(audioBlob: Blob): Promise<string> {
   // loading, please wait..." with HTTP 200, both are honest English already.
   if (data.error) throw new LocalSttError(String(data.error), res.status);
   return data.transcript || "";
+}
+
+export async function transcribeMediaUrl(url: string): Promise<string> {
+  const data: unknown = await backendCall('transcribe_media_url', { url });
+  const failed = prop(data, 'error');
+  if (failed) throw new LocalSttError(String(failed));
+  return asString(prop(data, 'transcript')) ?? '';
 }
 
 // --- LU Cloud voice (appMode 'cloud') ---

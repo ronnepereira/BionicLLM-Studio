@@ -38,6 +38,9 @@ No **Chat**, clique em **Escolher modelo** ao lado da caixa de mensagem. Você p
 
 - **Conversas organizadas.** Busque no histórico, renomeie ou duplique uma conversa. Edite uma mensagem, peça outra resposta ou abra uma nova conversa a partir daquela mensagem.
 - **Fila de mensagens.** Envie outro pedido enquanto a IA ainda responde. A mensagem fica na fila e segue automaticamente quando chegar a vez dela, tanto no Chat quanto no Código.
+- **Perguntas com opções.** Quando o modelo precisa esclarecer algo no Chat ou no Código, você pode escolher uma opção ou digitar sua própria resposta. As mensagens na fila aguardam antes de seguir.
+- **Ajuda sobre o app.** Pergunte ao modelo onde encontrar uma opção. Por exemplo, a fonte fica em **Configurações → Geral → Aparência → Tamanho da fonte do chat**.
+- **Transcrição de áudio.** No Chat ou no Código, abra **Transcrever áudio** ao lado do microfone. Grave, escolha um arquivo de áudio ou vídeo ou cole um link HTTPS direto e público da mídia. Revise o texto, use-o na mensagem ou salve em TXT. Arquivos e links usam faster-whisper local, disponível em **Configurações → Voz e acesso remoto**. Para YouTube e Vimeo, use um arquivo cujo download foi autorizado ou um link que entregue a mídia diretamente.
 - **Respostas formatadas.** Leia listas, tabelas, blocos de código, fórmulas em LaTeX e amostras de cores ao lado dos códigos. O chat também tem seletor de emojis.
 - **Imagens e documentos.** Anexe imagens para modelos com visão. Adicione documentos como referência para fazer perguntas sobre o conteúdo deles.
 - **Memória e personas.** Configure como o assistente fala e quais informações ele pode lembrar entre conversas. Em conversas longas, o app pode resumir as partes antigas para abrir espaço no contexto do modelo.

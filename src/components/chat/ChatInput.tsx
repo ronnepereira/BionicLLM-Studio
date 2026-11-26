@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useLayoutEffect, useCallback, lazy, Suspen
 import { usePopoverPlatz } from '../../hooks/usePopoverPlatz'
 import { SamplingControls } from './SamplingControls'
 import { ReasoningEffortPicker } from './ReasoningEffortPicker'
-import { Send, ListPlus, Square, Paperclip, X, Brain, Gauge, Terminal, Film, Music, Smile } from 'lucide-react'
+import { Send, ListPlus, Square, Paperclip, X, Brain, Gauge, Terminal, Film, Music, Smile, AudioLines } from 'lucide-react'
 const EmojiPicker = lazy(() => import('./EmojiPicker'))
 import { matchAgentCommands, type AgentCommand, type CommandScope } from '../../lib/agent-commands'
 import { VoiceButton, type VoiceButtonHandle } from './VoiceButton'
@@ -31,6 +31,9 @@ import { FILE_ONLY_TEXT, MAX_CHAT_FILES, TOO_MANY_FILES_MESSAGE, binarySummaryOn
 import { fileExtension } from '../../lib/file-magic'
 import { ChatFileChip } from './ChatFileChip'
 import { COMPOSER_MAX_W } from './composer-width'
+import { ChatQuestionCard } from './ChatQuestionCard'
+import { TranscriptionDialog } from './TranscriptionDialog'
+import { pendingChatQuestion } from '../../lib/chat-question'
 import { consumeComposerFocusPending } from '../../hooks/useKeyboardShortcuts'
 import { useChatNoticeStore, CHAT_NOTICE_MS } from '../../stores/chatNoticeStore'
 import { MONOGRAM, MONOGRAM_INVERT } from '../layout/brand'
@@ -151,6 +154,7 @@ interface SendLock {
 
 export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, pendingApproval, onApprove, onApproveAll, onReject, disabled, modelReady, slashCommands, composerModel, composerActions, composerAbove, filesReachTools = false, draftScope = 'chat', enableMessageQueue = false }: Props) {
   const uiText = useUiText()
+  const [transcriptionOpen, setTranscriptionOpen] = useState(false)
 
   // What this composer held when its view closed last (lib/chat-drafts.ts):
   // the draft of the open chat goes straight into the field, the rest into
@@ -310,7 +314,10 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
   const sendingMessage = useComposerQueueStore((s) => enableMessageQueue && conversationId ? s.sending[conversationId] : undefined)
   const bookedRun = useGenerationStore((s) => !!(enableMessageQueue && conversationId && s.runs[conversationId]))
   const answerInProgress = isGenerating || !!waitingForLocalLane || bookedRun || !!sendingMessage
-  const willQueue = !!(enableMessageQueue && conversationId && (answerInProgress || queuedMessages?.length))
+  const questionMessages = useChatStore((s) => enableMessageQueue && !answerInProgress && !disabled
+    ? s.conversations.find(conversation => conversation.id === conversationId)?.messages : undefined)
+  const clarification = pendingChatQuestion(questionMessages)
+  const willQueue = !!(enableMessageQueue && conversationId && (answerInProgress || (!clarification && queuedMessages?.length)))
 
   const activeModelMeta = useModelStore((s) => s.models.find((m) => m.name === s.activeModel))
   // Server-declared capability (LU Cloud carries thinkMode from /models) wins
@@ -577,6 +584,36 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
   // / a held Enter) both pass the checks below and send the identical message
   // twice. A short monotonic lock closes that window.
   const sendLockRef = useRef<SendLock>({ at: 0, message: '' })
+  useEffect(() => {
+    if (!enableMessageQueue) return
+    const appendLink = (event: Event) => {
+      const url = (event as CustomEvent<unknown>).detail
+      if (typeof url === 'string') setInput(input => [input.trimEnd(), url].filter(Boolean).join('\n\n'))
+    }
+    window.addEventListener('bionic:attach-browser-page', appendLink)
+    return () => window.removeEventListener('bionic:attach-browser-page', appendLink)
+  }, [enableMessageQueue, setInput])
+
+  const handleAnswer = (answer: string) => {
+    const chat = useChatStore.getState()
+    const id = chat.activeConversationId
+    if (!id || id !== conversationId || answerInProgress || !clarification) return
+    const generation = useGenerationStore.getState()
+    const queue = useComposerQueueStore.getState()
+    if (generation.runs[id] || generation.generating[id] || queue.sending[id]) return
+    const conversation = chat.conversations.find(item => item.id === id)
+    if (pendingChatQuestion(conversation?.messages)?.id !== clarification.id) return
+    if (!(modelReady ? modelReady() : !!useModelStore.getState().activeModel)) {
+      useUIStore.getState().askForModel()
+      return
+    }
+    const model = useModelStore.getState().activeModel
+    if (!model) return
+    dismissComputerStop()
+    queue.track(id, onSend(`${uiText('My answer')}: ${answer}`, undefined, undefined, undefined, { conversationId: id, model }),
+      error => console.error('Clarification answer failed', error))
+  }
+
   const handleSend = () => {
     // Enter ends the last word as a space would, so an emoticon there turns.
     const trimmed = (emojiOn ? turnOnSend(input) : input).trim()
@@ -610,7 +647,7 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
     const queue = useComposerQueueStore.getState()
     const id = useChatStore.getState().activeConversationId
     const model = useModelStore.getState().activeModel
-    if (enableMessageQueue && id && model && (willQueue || queue.sending[id] || queue.messages[id]?.length
+    if (enableMessageQueue && id && model && (willQueue || queue.sending[id] || (!clarification && queue.messages[id]?.length)
       || useGenerationStore.getState().runs[id])) {
       const target = { conversationId: id, model }
       queue.enqueue(target, trimmed || files.map(file => file.attachment.name).join(', ') || uiText("Attachments"), () => send(target))
@@ -746,6 +783,13 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
 
   return (
     <div className={`px-3 pb-2 pt-1 w-full ${COMPOSER_MAX_W} mx-auto`}>
+      {transcriptionOpen && <TranscriptionDialog key={conversationId ?? draftScope} onClose={() => setTranscriptionOpen(false)}
+        onUse={transcript => {
+          setInput([input.trimEnd(), transcript].filter(Boolean).join('\n\n'))
+          setTranscriptionOpen(false)
+          requestAnimationFrame(() => textareaRef.current?.focus())
+        }} />}
+      {clarification && <ChatQuestionCard key={`${conversationId}:${clarification.id}`} clarification={clarification} onAnswer={handleAnswer} />}
       {conversationId && !!queuedMessages?.length && (
         <section className="mb-2 rounded-md border border-gray-200 px-2 py-1.5 text-xs text-gray-600 dark:border-white/10 dark:text-gray-300" aria-label={uiText("Queued messages")}>
           <div className="flex items-center gap-1.5" role="status"><ListPlus size={14} />{uiText("Queued messages")} ({queuedMessages.length})</div>
@@ -1011,6 +1055,11 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
             // button greyed out until the answer ended, a send while
             // dictating still left the microphone out of reach.
           />
+          {enableMessageQueue && <button type="button" className="lu-control lu-control--icon shrink-0"
+            disabled={isVoiceRecording || isTranscribing}
+            onClick={() => setTranscriptionOpen(true)} title={uiText('Transcribe audio')} aria-label={uiText('Transcribe audio')}>
+            <AudioLines size={14} />
+          </button>}
 
           {/* Think toggle ('always'-models render it locked on).
               Der Ein-Zustand kommt aus `aria-pressed`, nicht aus einer

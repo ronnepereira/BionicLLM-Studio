@@ -84,6 +84,7 @@ import { shouldDowngradeThinking, engineDeniedThinking } from './codex/thinking-
 import { ProviderError } from '../api/providers/types'
 import { useBackgroundAgentWake } from './useBackgroundAgentWake'
 import { buildChatSystemPrompt } from '../lib/system-prompt'
+import { CHAT_QUESTION_PROMPT } from '../lib/chat-question'
 import { useSkillStore } from '../stores/skillStore'
 import { withChatPersona, speakerSamplingOptions, plainChatSpeaker, speakerPersonaFor } from '../lib/chat-persona'
 import { personaNoteOf } from '../lib/persona-note'
@@ -1256,6 +1257,7 @@ export function useChat() {
     // character what it was; only when this message plainly asks for a medium
     // does a note point at the switch, for this one turn. Empty outside Cloud
     // mode and for an account that is not released.
+    if (!isMobile() && !opts?.continueFrom) systemPrompt += '\n\n' + CHAT_QUESTION_PROMPT
     systemPrompt = withCreateText(systemPrompt, createSystemText(settings, activeModel, createLive, content))
     let ragSuffix = ''
 

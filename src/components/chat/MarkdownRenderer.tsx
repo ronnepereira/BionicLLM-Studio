@@ -7,6 +7,7 @@ import 'katex/dist/katex.min.css'
 import { MATH_OPTIONS, chatContentNeedsKatex } from '../../lib/markdown-math'
 import { remarkChatMath } from '../../lib/remark-chat-math'
 import { CodeBlock, isHtmlSnippet } from './CodeBlock'
+import { parseChatQuestionJson } from '../../lib/chat-question'
 import { InlineHtmlPreview } from './InlineHtmlPreview'
 import { rehypeColorSwatches, remarkVisualHtml } from '../../lib/markdown-colors'
 import { codeBlockText } from '../../lib/markdown-code'
@@ -138,6 +139,10 @@ const components: Components = {
       // its opening fence and its first character. Live capture and the shapes
       // it has to survive are in lib/markdown-code.ts.
       const code = codeBlockText(children)
+      if (match?.[1] === 'studio-question') {
+        const clarification = parseChatQuestionJson(code)
+        if (clarification) return <p className="mb-3 whitespace-pre-wrap leading-relaxed">{clarification.question}</p>
+      }
       return isHtmlSnippet(code, match?.[1]) ? <InlineHtmlPreview code={code} language={match?.[1]} /> : <CodeBlock code={code} language={match?.[1]} />
     }
 

@@ -1,4 +1,5 @@
 import { skillBudgetForModel } from '../lib/skill-model-budget'
+import { CHAT_QUESTION_PROMPT, parseChatQuestion } from '../lib/chat-question'
 import { sendWindowFor } from '../lib/model-send-window'
 import { useRef, useState, useCallback } from 'react'
 import { markCannotThink } from '../lib/model-compatibility'
@@ -841,6 +842,8 @@ export function useCodex() {
     // Der Coding-Agent bringt seine eigene Rolle mit, deshalb nur die Zeile
     // und nicht der ganze Grundtext.
     let systemPrompt = withHouseConduct(`${baseCodexPrompt}${assetLine}\n\n${platformPromptLine()}\n${workDirLine}`, useSkillStore.getState().skills, useSettingsStore.getState().settings, await skillBudgetForModel(activeModel))
+    const acceptsClarification = !opts?.loop && !opts?.hiddenUser
+    if (acceptsClarification) systemPrompt += '\n\n' + CHAT_QUESTION_PROMPT
     // Standing goal (/goal) — ahead of the rules and the repo map so it frames
     // everything that follows instead of reading as an afterthought.
     systemPrompt += renderGoalSection(useAgentGoalStore.getState().getGoal(convId))
@@ -2083,6 +2086,7 @@ export function useCodex() {
         // (only strong "is complete / all tests pass / committed" phrases, not
         // forward-looking "to complete the fix") so we err toward nudging.
         if (toolCalls.length === 0) {
+          if (acceptsClarification && parseChatQuestion(turnContent)) break
           // Steckengeblieben oder fertig — drei Muster ueber denselben Text und
           // ihre Fehlalarm-Geschichte: hooks/codex/stall-verdict.ts.
           const { nudgeWorthy } = codexStallVerdict(turnContent, fullContent)

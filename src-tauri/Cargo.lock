@@ -3012,7 +3012,7 @@ dependencies = [
 
 [[package]]
 name = "locally-uncensored"
-version = "4.0.1"
+version = "4.0.2"
 dependencies = [
  "axum",
  "base64 0.22.1",

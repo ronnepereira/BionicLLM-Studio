@@ -557,6 +557,7 @@ const CLOUD_DICTATION_LIMIT_MS = 340_000;
 export function useVoice() {
   const store = useVoiceStore();
   const recorderRef = useRef<AudioRecorder | null>(null);
+  const recorderMounted = useRef(false);
   // The level meter of the running take (phone only), see startLevelMeter.
   const meterRef = useRef<LevelMeter | null>(null);
   // Streaming-dictation plumbing: a polling timer that transcribes the
@@ -571,18 +572,22 @@ export function useVoice() {
   // keeps POSTing WAV snapshots forever, the mic stays hot, and the stuck
   // store.isRecording can never be cleared.
   useEffect(
-    () => () => {
-      if (streamTimerRef.current) {
-        clearInterval(streamTimerRef.current);
-        streamTimerRef.current = null;
-      }
-      dropMeter(meterRef);
-      const rec = recorderRef.current;
-      recorderRef.current = null;
-      if (rec?.isRecording()) {
-        void rec.stop().catch(() => {});
-        useVoiceStore.getState().setRecording(false);
-      }
+    () => {
+      recorderMounted.current = true;
+      return () => {
+        recorderMounted.current = false;
+        if (streamTimerRef.current) {
+          clearInterval(streamTimerRef.current);
+          streamTimerRef.current = null;
+        }
+        dropMeter(meterRef);
+        const rec = recorderRef.current;
+        recorderRef.current = null;
+        if (rec?.isRecording()) {
+          void rec.stop().catch(() => {});
+          useVoiceStore.getState().setRecording(false);
+        }
+      };
     },
     [],
   );
@@ -679,19 +684,27 @@ export function useVoice() {
         store.setSttError(MOBILE_TEXT.dictationNeedsConsent);
         return false;
       }
+      if (!recorderMounted.current) return false;
       // A new take replaces one that was kept for a retry (phone only).
       discardFailedTake();
       const recorder = createAudioRecorder();
       recorderRef.current = recorder;
 
       try {
+        let stream: MediaStream | null | undefined;
         if (isMobile()) {
           // The same start, with the stream handed out for the level meter.
-          const stream = await startRecorderWithStream(recorder);
-          dropMeter(meterRef);
-          meterRef.current = stream ? startLevelMeter(stream) : null;
+          stream = await startRecorderWithStream(recorder);
         } else {
           await recorder.start();
+        }
+        if (recorderRef.current !== recorder) {
+          await recorder.stop();
+          return false;
+        }
+        if (stream) {
+          dropMeter(meterRef);
+          meterRef.current = startLevelMeter(stream);
         }
         store.setRecording(true);
         store.setTranscript("");

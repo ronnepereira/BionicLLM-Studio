@@ -19,6 +19,7 @@ pub struct BrowserRequest {
     text: Option<String>,
     x: Option<i32>,
     y: Option<i32>,
+    zoom: Option<u16>,
 }
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -59,6 +60,7 @@ mod native {
     use tauri::{Emitter, Manager};
     use tokio::sync::{oneshot, Mutex};
     use webview2_com::{Microsoft::Web::WebView2::Win32::*, CoTaskMemPWSTR, CreateCoreWebView2EnvironmentCompletedHandler, CreateCoreWebView2ControllerCompletedHandler, NavigationStartingEventHandler, NavigationCompletedEventHandler, SourceChangedEventHandler, DocumentTitleChangedEventHandler, NewWindowRequestedEventHandler, PermissionRequestedEventHandler, ExecuteScriptCompletedHandler, LaunchingExternalUriSchemeEventHandler, CallDevToolsProtocolMethodCompletedHandler, ClearBrowsingDataCompletedHandler};
+    use webview2_com::FindStartCompletedHandler;
     use windows::{core::{PCWSTR, PWSTR, Interface}, Win32::Foundation::{HWND, RECT}};
     use windows_sys::Win32::UI::WindowsAndMessaging::{CreateWindowExW, DestroyWindow, SetWindowPos, ShowWindow, HWND_TOP, SWP_NOACTIVATE, SW_HIDE, SW_SHOWNOACTIVATE, WS_CHILD, WS_CLIPSIBLINGS, WS_CLIPCHILDREN};
 
@@ -429,7 +431,7 @@ mod native {
             match result { Ok(script) => execute_script(page, script, REVISION.with(Cell::get), request.action == "read", if request.action == "press" { request.text } else { None }, reply), Err(error) => { let _ = reply.send(Err(error)); } }
             return;
         }
-        if request.action == "clear_cache" {
+        if matches!(request.action.as_str(), "clear_cache" | "clear_history") {
             changed(&id);
             let response = Rc::new(RefCell::new(Some(reply)));
             let callback_response = response.clone();
@@ -444,7 +446,51 @@ mod native {
                     page.cast::<ICoreWebView2_13>().map_err(error)?
                         .Profile().map_err(error)?
                         .cast::<ICoreWebView2Profile2>().map_err(error)?
-                        .ClearBrowsingData(COREWEBVIEW2_BROWSING_DATA_KINDS_DISK_CACHE, &callback).map_err(error)
+                        .ClearBrowsingData(if request.action == "clear_cache" {
+                            COREWEBVIEW2_BROWSING_DATA_KINDS_DISK_CACHE
+                        } else {
+                            COREWEBVIEW2_BROWSING_DATA_KINDS_BROWSING_HISTORY
+                        }, &callback).map_err(error)
+                }
+            })();
+            if let Err(failure) = result {
+                if let Some(reply) = response.borrow_mut().take() { let _ = reply.send(Err(failure)); }
+            }
+            return;
+        }
+        if request.action == "reload_uncached" {
+            changed(&id);
+            input_event(page, "Page.reload", Rc::new(vec![json!({"ignoreCache": true})]), 0,
+                STOP_EPOCH.load(Ordering::SeqCst), Rc::new(RefCell::new(Some(reply))));
+            return;
+        }
+        if request.action == "find_start" {
+            let response = Rc::new(RefCell::new(Some(reply)));
+            let result = (|| -> Result<(), String> {
+                let term = request.text.as_deref().unwrap_or_default();
+                if term.trim().is_empty() || term.chars().count() > 300 || term.chars().any(char::is_control) {
+                    return Err("Informe um termo de busca com até 300 caracteres.".into());
+                }
+                unsafe {
+                    let find = page.cast::<ICoreWebView2_28>().map_err(|_| "Atualize o WebView2 para buscar texto na página.")?.Find().map_err(error)?;
+                    let environment = page.cast::<ICoreWebView2_2>().map_err(error)?.Environment().map_err(error)?;
+                    let options = environment.cast::<ICoreWebView2Environment15>().map_err(error)?.CreateFindOptions().map_err(error)?;
+                    let term = CoTaskMemPWSTR::from(term);
+                    options.SetFindTerm(*term.as_ref().as_pcwstr()).map_err(error)?;
+                    let callback_response = response.clone();
+                    let completed_finder = find.clone();
+                    let callback = FindStartCompletedHandler::create(Box::new(move |status| {
+                        if let Some(reply) = callback_response.borrow_mut().take() {
+                            let result = status.map_err(error).and_then(|()| {
+                                let mut count = 0;
+                                completed_finder.MatchCount(&mut count).map_err(error)?;
+                                Ok(json!({ "count": count }))
+                            });
+                            let _ = reply.send(result);
+                        }
+                        Ok(())
+                    }));
+                    find.Start(&options, &callback).map_err(error)
                 }
             })();
             if let Err(failure) = result {
@@ -470,6 +516,19 @@ mod native {
                     "back" => { changed(&id); page.GoBack().map_err(error)?; },
                     "forward" => { changed(&id); page.GoForward().map_err(error)?; },
                     "reload" => { changed(&id); page.Reload().map_err(error)?; },
+                    "zoom" => {
+                        let percent = request.zoom.filter(|value| (50..=200).contains(value)).ok_or("Zoom fora do intervalo de 50% a 200%.")?;
+                        controller.SetZoomFactor(f64::from(percent) / 100.0).map_err(error)?;
+                        changed(&id);
+                    },
+                    "find_next" | "find_prev" | "find_stop" => {
+                        let find = page.cast::<ICoreWebView2_28>().map_err(|_| "Atualize o WebView2 para buscar texto na página.")?.Find().map_err(error)?;
+                        match request.action.as_str() {
+                            "find_next" => find.FindNext(),
+                            "find_prev" => find.FindPrevious(),
+                            _ => find.Stop(),
+                        }.map_err(error)?;
+                    },
                     "stop" => { changed(&id); page.Stop().map_err(error)?; emit(&app, &id, &page, false, None); },
                     _ => return Err("Ação de navegador inválida.".into()),
                 }

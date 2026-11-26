@@ -3,6 +3,7 @@ import { useChatStore } from './chatStore'
 import { useGenerationStore } from './generationStore'
 import { useSettingsStore } from './settingsStore'
 import { modelOutOfMode } from '../lib/modeGate'
+import { pendingChatQuestion } from '../lib/chat-question'
 
 export interface ComposerQueueTarget {
   conversationId: string
@@ -67,7 +68,8 @@ export const useComposerQueueStore = create<ComposerQueue>((set, get) => ({
         ? { ...item, failed: true }
         : item) ?? [],
     } }))
-    if (!useChatStore.getState().conversations.some(conversation => conversation.id === conversationId)) return
+    const conversation = useChatStore.getState().conversations.find(item => item.id === conversationId)
+    if (!conversation || pendingChatQuestion(conversation.messages)) return
     track(conversationId, Promise.resolve().then(async () => {
       if (get().messages[conversationId]?.[0]?.id !== message.id) return
       await message.send()
@@ -85,6 +87,7 @@ export const useComposerQueueStore = create<ComposerQueue>((set, get) => ({
 }))
 
 useChatStore.subscribe((state, previous) => {
+  if (state.conversations !== previous.conversations) scheduleDrain()
   if (state.conversations.length >= previous.conversations.length) return
   const messages = useComposerQueueStore.getState().messages
   const retained = Object.entries(messages)

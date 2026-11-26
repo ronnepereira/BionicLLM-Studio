@@ -799,6 +799,7 @@ pub fn run() {
             // Whisper STT
             commands::whisper::whisper_status,
             commands::whisper::transcribe,
+            commands::whisper::transcribe_media_url,
             // Piper neural TTS
             commands::tts::tts_status,
             #[cfg(desktop)]

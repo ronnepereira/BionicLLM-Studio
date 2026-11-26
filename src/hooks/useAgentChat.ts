@@ -177,6 +177,7 @@ import { asString, errorText, isRecord, prop } from '../types/json-guards'
 import type { ToolArgs } from '../api/mcp/types'
 import { CREDITS_EXHAUSTED_MESSAGE } from '../lib/credits-exhausted'
 import { buildChatSystemPrompt } from '../lib/system-prompt'
+import { CHAT_QUESTION_PROMPT, parseChatQuestion } from '../lib/chat-question'
 import { useSkillStore } from '../stores/skillStore'
 import { withChatPersona, samplingPresetFor, speakerPersonaFor } from '../lib/chat-persona'
 import { injectPersonaNote, noteTokens, personaNoteOf } from '../lib/persona-note'
@@ -1090,7 +1091,9 @@ export function useAgentChat() {
     // full rationale (Devil's Advocate hijack bug).
     // GH #170: the persona of THIS chat, the one its Plugins menu names.
     const { personas, activePersonaId } = useSettingsStore.getState()
-    const systemPrompt = buildChatSystemPrompt(withChatPersona(conv, personas, activePersonaId), settings.personasEnabled !== false, useSkillStore.getState().skills, settings, await skillBudgetForModel(activeModel))
+    let systemPrompt = buildChatSystemPrompt(withChatPersona(conv, personas, activePersonaId), settings.personasEnabled !== false, useSkillStore.getState().skills, settings, await skillBudgetForModel(activeModel))
+    const acceptsClarification = !isMobile() && !opts?.loop && !opts?.hiddenUser
+    if (acceptsClarification) systemPrompt += '\n\n' + CHAT_QUESTION_PROMPT
     // Phone only (the rest of N2): the question is on the disk before a
     // model is asked. Same short cap as in useChat (questionOnDisk). No
     // await at all on a desktop.
@@ -2667,7 +2670,7 @@ export function useAgentChat() {
           // read-only guard above for the ReferenceError that name cost), and
           // the model's claim is appended first so it argues against its own
           // words, not against a hole in the history.
-          if (!opts?.readOnly && planReconcilesRemaining > 0) {
+          if (!opts?.readOnly && planReconcilesRemaining > 0 && !(acceptsClarification && parseChatQuestion(turnContent))) {
             const gap = openPlanGap(useTodoStore.getState().getTodos(convId!))
             if (gap) {
               planReconcilesRemaining--

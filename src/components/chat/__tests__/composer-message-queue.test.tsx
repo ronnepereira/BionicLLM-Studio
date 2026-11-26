@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ChatInput } from '../ChatInput'
 import { useChatStore } from '../../../stores/chatStore'
@@ -8,6 +8,8 @@ import { useGenerationStore } from '../../../stores/generationStore'
 import { useModelStore } from '../../../stores/modelStore'
 
 const model = 'ollama:queue-model'
+const question = 'Qual formato você prefere?'
+const questionBlock = ['```studio-question', JSON.stringify({ question, options: ['PDF', 'Markdown'] }), '```'].join('\n')
 
 afterEach(() => {
   cleanup()
@@ -18,6 +20,41 @@ afterEach(() => {
 })
 
 describe('desktop composer queue', () => {
+  it.each([
+    ['lu', 'PDF'],
+    ['codex', 'Texto simples'],
+  ] as const)('lets %s answer a clarification before queued messages resume', async (mode, answer) => {
+    const chat = useChatStore.getState().createConversation(model, '', mode)
+    useModelStore.setState({ activeModel: model })
+    const sendQueued = vi.fn()
+    act(() => {
+      useGenerationStore.getState().setGenerating(chat, true)
+      useComposerQueueStore.getState().enqueue({ conversationId: chat, model }, 'follow-up', sendQueued)
+      useChatStore.getState().addMessage(chat, { id: 'question', timestamp: Date.now(), role: 'assistant', content: questionBlock })
+    })
+    const onSend = vi.fn((content: string) => {
+      useChatStore.getState().addMessage(chat, { id: 'answer', timestamp: Date.now(), role: 'user', content })
+    })
+    const props = { onSend, onStop: vi.fn(), enableMessageQueue: true }
+    const view = render(<ChatInput {...props} isGenerating />)
+    expect(screen.queryByRole('region', { name: question })).toBeNull()
+    await act(async () => {
+      useGenerationStore.getState().setGenerating(chat, false)
+      view.rerender(<ChatInput {...props} isGenerating={false} />)
+    })
+    expect(sendQueued).not.toHaveBeenCalled()
+    const card = within(screen.getByRole('region', { name: question }))
+    if (answer === 'PDF') {
+      fireEvent.click(card.getByRole('button', { name: 'PDF' }))
+    } else {
+      fireEvent.change(card.getByRole('textbox'), { target: { value: answer } })
+      fireEvent.click(card.getByRole('button', { name: 'Enviar resposta' }))
+    }
+    expect(onSend).toHaveBeenCalledExactlyOnceWith(`Minha resposta: ${answer}`, undefined, undefined, undefined, { conversationId: chat, model })
+    await waitFor(() => expect(sendQueued).toHaveBeenCalledTimes(1))
+    expect(screen.queryByRole('region', { name: question })).toBeNull()
+  })
+
   it('queues via Enter and button, allows removal, and sends in order to the original chat', async () => {
     const chat = useChatStore.getState().createConversation(model, '')
     useModelStore.setState({ activeModel: model })

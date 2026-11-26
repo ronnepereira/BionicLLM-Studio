@@ -376,22 +376,51 @@ pub async fn transcribe(
     // so the window locked up for the whole take.
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        transcribe_blocking(&app, audio_base64, content_type, &state)
+        let audio_bytes = base64::engine::general_purpose::STANDARD
+            .decode(&audio_base64)
+            .map_err(|e| format!("base64 decode: {e}"))?;
+        transcribe_blocking(&app, &audio_bytes, &content_type, &state)
     })
     .await
     .map_err(|e| format!("Transcription task failed to run: {e}"))?
 }
 
+/// This command is called by the explicit transcription dialog in the app.
+/// Reuse the public-URL gate and pin every hop, just like web_fetch.
+#[tauri::command]
+pub async fn transcribe_media_url(app: AppHandle, url: String) -> Result<serde_json::Value, String> {
+    use super::web_reach::{fetch_page_with, model_url_addrs, USER_AGENT};
+    use std::{sync::Arc, time::Duration};
+
+    let input = url::Url::parse(url.trim()).map_err(|_| "Informe um link HTTPS direto para o arquivo de áudio ou vídeo.")?;
+    let gate = Arc::new(|target: &str| {
+        if url::Url::parse(target).is_err() || !target.starts_with("https://") {
+            return Err("O link e seus redirecionamentos precisam usar HTTPS.".to_owned());
+        }
+        model_url_addrs(target)
+    });
+    let page = fetch_page_with(input.as_str(), gate, 25 * 1024 * 1024, Duration::from_secs(60), USER_AGENT).await?;
+    if !(200..300).contains(&page.status) {
+        return Err(format!("O servidor recusou o arquivo (HTTP {}).", page.status));
+    }
+    let content_type = page.content_type.to_ascii_lowercase();
+    if !(content_type.starts_with("audio/") || content_type.starts_with("video/")) {
+        return Err("Este link não aponta diretamente para um arquivo de áudio ou vídeo. Selecione um arquivo autorizado ou use o endereço direto da mídia.".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        transcribe_blocking(&app, &page.body, &content_type, &state)
+    })
+    .await
+    .map_err(|e| format!("Falha ao executar a transcrição: {e}"))?
+}
+
 fn transcribe_blocking(
     app: &AppHandle,
-    audio_base64: String,
-    content_type: String,
+    audio_bytes: &[u8],
+    content_type: &str,
     state: &State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    let audio_bytes = base64::engine::general_purpose::STANDARD
-        .decode(&audio_base64)
-        .map_err(|e| format!("base64 decode: {}", e))?;
-
     if audio_bytes.is_empty() {
         return Err("Empty audio data".to_string());
     }
@@ -419,7 +448,7 @@ fn transcribe_blocking(
     // and the take with it, which is what the explicit remove_file below used to
     // do — and it now also covers the early returns that used to leak the file.
     let (_audio_dir, tmp_file) =
-        crate::private_tmp::write_private_temp("lu-whisper-take-", &format!("take{}", ext), &audio_bytes)?;
+        crate::private_tmp::write_private_temp("lu-whisper-take-", &format!("take{}", ext), audio_bytes)?;
 
     let audio_path = tmp_file.to_string_lossy().replace('\\', "/");
     println!("[Whisper] Transcribing: {} ({:.1} KB)", audio_path, audio_bytes.len() as f64 / 1024.0);
@@ -463,10 +492,7 @@ fn transcribe_blocking(
 
     match result {
         Ok(response) => {
-            if let Some(transcript) = response.get("transcript").and_then(|t| t.as_str()) {
-                println!("[Whisper] Transcribed: \"{}\" (lang: {})",
-                    transcript.chars().take(80).collect::<String>(),
-                    response.get("language").and_then(|l| l.as_str()).unwrap_or("?"));
+            if response.get("transcript").and_then(|t| t.as_str()).is_some() {
                 info!("transcribe ok");
             }
             Ok(response)

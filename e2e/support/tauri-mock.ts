@@ -896,6 +896,11 @@ export function tauriMockInit(opts: TauriMockOptions) {
     // the cases below read the fields the caller actually sent.
     const m = args?.args ?? args ?? {}
     switch (cmd) {
+      case 'chat_deletions_read':
+      case 'agent_gateway_sync':
+        return Promise.resolve([])
+      case 'chat_backup_conversations':
+        return Promise.resolve('[]')
       // ── onboarding / lifecycle markers ────────────────────────────
       case 'is_onboarding_done':
         return Promise.resolve(false)
