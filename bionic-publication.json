@@ -1,6 +1,6 @@
 {
   "repository": "ronnepereira/BionicLLM-Studio",
-  "updatesEnabled": false,
+  "updatesEnabled": true,
   "experimentalPlatforms": [
     "linux",
     "darwin"

@@ -13,6 +13,7 @@ import { useCompareStore, openCompare } from '../../stores/compareStore'
 import { useModelStore } from '../../stores/modelStore'
 import { useProviderStore } from '../../stores/providerStore'
 import { DownloadBadge } from './DownloadBadge'
+import { UpdateBadge } from './UpdateBadge'
 import { loadModel } from '../../api/ollama'
 import { log } from '../../lib/logger'
 import { getProviderIdFromModel } from '../../api/providers'
@@ -564,6 +565,7 @@ export function Header() {
           else { useCompareStore.getState().setComparing(false); useUIStore.getState().setView('chat'); useSidePanelStore.getState().showMenu() }
         }} className="rounded-md p-1 text-gray-500 hover:bg-gray-100 aria-pressed:text-blue-500 dark:hover:bg-white/5"><PanelRightOpen size={16} /></button>
         <DownloadBadge />
+        <UpdateBadge />
         <button
           onClick={revealBrowser}
           className="p-1 rounded-md text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors aria-pressed:text-blue-500"

@@ -4792,6 +4792,8 @@
   "Update Persona": "Atualizar Personagem",
   "Update available!": "Atualização disponível!",
   "Update available: v{v0}": "Atualização disponível: v{v0}",
+  "Update failed": "Falha na atualização",
+  "Update ready": "Atualização pronta",
   "Update ready, click to restart": "Atualização pronta, clique para reiniciar",
   "Update {v0}": "Atualização {v0}",
   "Update": "Atualização",

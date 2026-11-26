@@ -1,6 +1,6 @@
 # Publicação do BionicLLM Studio
 
-O destino é `ronnepereira/BionicLLM-Studio`, inicialmente **privado**. A publicação de uma release e a mudança para público são etapas separadas. Não há certificado Windows nem conta Apple Developer: Windows distribui MSI sem Authenticode e macOS usa assinatura ad hoc, sem notarização. Linux e macOS são experimentais, sem validação em uso real.
+O repositório `ronnepereira/BionicLLM-Studio` é o destino do código e das versões distribuídas pelo GitHub Releases. O Windows distribui MSI com assinatura de atualização Tauri e sem Authenticode. Linux e macOS são experimentais.
 
 ## Código limpo
 
@@ -12,7 +12,7 @@ O exportador aplica regras de inclusão e faz uma busca de credenciais conhecida
 
 A chave privada NÃO está no repositório. Foi gerada em uma pasta privada externa, com acesso restrito ao usuário do Windows. Guarde cópia de segurança da chave e da senha. Sua perda impede atualizar instalações que confiam na chave atual. Somente a chave pública é incluída no código.
 
-No GitHub Actions, cadastrar os Secrets:
+O build local usa a chave e a senha somente no ambiente do processo de assinatura. Para builds assinados no GitHub Actions, os Secrets correspondentes são:
 
 - `TAURI_SIGNING_PRIVATE_KEY`: conteúdo da chave privada.
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: senha da chave.
@@ -25,17 +25,17 @@ Esses valores são enviados por entrada padrão pelo GitHub CLI; nunca por mensa
 
 Push em `main` verifica fonte, TypeScript, lint do código de publicação/atualização e testes dirigidos. O lint completo (`npm run lint`) tem erros preexistentes em outros módulos; o workflow não declara aprovação global desse lint. O build dos instaladores é manual, pelo workflow **BionicLLM - Verify and prepare installers**. Escolher Windows gera MSI x64; Linux gera AppImage/deb x64; macOS gera DMG/arquivo de atualização Apple Silicon. Escolher `all` compila todos, em sequência. Não há pacote Intel para macOS nesta primeira etapa.
 
-Uma tag estável `vX.Y.Z` também inicia os builds. `package.json`, `src-tauri/Cargo.toml` e `src-tauri/tauri.conf.json` precisam concordar com a tag. `Cargo.lock` e `package-lock.json` devem acompanhar mudanças de versão/dependências. Não criar tags durante a preparação privada sem intenção de gerar os pacotes.
+O build de instaladores no Actions é iniciado pelo workflow manual. Em cada release estável, `package.json`, `src-tauri/Cargo.toml` e `src-tauri/tauri.conf.json` precisam concordar com a tag. `Cargo.lock` e `package-lock.json` devem acompanhar as mudanças.
 
-Os instaladores ficam como artifacts por três dias. Com `all` e a opção de rascunho, ou por tag, o fluxo só cria uma **release de rascunho** depois dos três builds, com instaladores, hashes SHA-256 e `latest.json`. As assinaturas dos arquivos de atualização são verificadas contra a chave pública. Não publica automaticamente e não sobrescreve releases existentes. Falha durante upload pode deixar rascunho parcial: revisar antes de tentar novamente.
+Os instaladores ficam como artifacts por três dias. Com `all` e a opção de rascunho, o workflow cria uma **release de rascunho** depois dos três builds, com instaladores, hashes SHA-256 e `latest.json`. Uma release local pode conter somente os sistemas verificados. Em ambos os casos, confira a assinatura contra a chave pública e publique o rascunho após revisar os arquivos. O `latest.json` deve listar somente os pacotes disponíveis.
 
 Os executores são os padrões do GitHub. Em repositório privado, consomem a franquia do plano; não são ilimitados. Manter orçamento pago em zero e verificar a franquia antes dos builds de várias plataformas. O fluxo não altera faturamento. Nenhum serviço de assinatura pago é usado.
 
 ## Atualizações pelo app
 
-Enquanto privado, `updatesEnabled` em `bionic-publication.json` fica `false`. Os downloads privados exigem login no GitHub; o aplicativo não carrega token embutido. Instalar os pacotes de teste manualmente.
+Com `updatesEnabled` ativo, o app consulta o `latest.json` da última release estável ao iniciar e durante o uso. O aviso aparece na barra superior. O download automático é opcional. A instalação e o reinício exigem confirmação no diálogo. Instale manualmente a primeira versão com o canal habilitado ao migrar de uma versão com o canal desativado.
 
-Quando o repositório e os downloads estiverem públicos e validados, mudar `updatesEnabled` para `true`, compilar novamente e lançar a primeira versão pública. O app passa a consultar o `latest.json` da última release publicada ao iniciar e durante o uso; oferece verificação manual, download e instalação com confirmação. Downloads automáticos começam desligados, respeitando preferências já salvas. Uma versão privada com atualizações desligadas precisará dessa primeira instalação pública manual.
+Publique cada atualização com o código-fonte correspondente disponível para quem baixa o pacote, conforme a AGPLv3. Use a tag do commit utilizado no build e publique o MSI assinado, o arquivo `.sig`, o `latest.json` e o SHA-256. A assinatura Tauri protege a integridade da atualização. A chave privada fica no ambiente de build.
 
 No Windows, o MSI serve tanto para instalação manual quanto para o pacote de atualização. Atualização pode pedir elevação de privilégios. A assinatura do atualizador é gratuita e não remove SmartScreen, editor desconhecido ou verificações do macOS. Não orientar usuários a desativar proteções do sistema.
 

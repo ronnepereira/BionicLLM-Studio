@@ -7,6 +7,7 @@ import { useUpdateStore, initUpdateChecker } from '../../stores/updateStore'
 import { formatBytes } from '../../lib/formatters'
 import { isTauri } from '../../api/backend'
 import { ICON_LG } from '../ui/icon-size'
+import { ConfirmAppUpdate } from './ConfirmAppUpdate'
 
 export function UpdateBadge() {
   const uiText = useUiText()
@@ -29,6 +30,7 @@ export function UpdateBadge() {
   } = useUpdateStore()
 
   const [open, setOpen] = useState(false)
+  const [confirmVersion, setConfirmVersion] = useState<string | null>(null)
   const ref = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const panel = usePopoverPlatz(panelRef, open, { abstand: 6 })
@@ -58,20 +60,22 @@ export function UpdateBadge() {
   // the badge says what it wants in words. It still collapses to the icon on a
   // narrow window, where the header has no room for a label.
   const label = isDownloaded
-    ? 'Restart to update'
+    ? uiText('Update ready')
     : isDownloading
-      ? `Updating ${downloadProgress}%`
+      ? uiText('Downloading update... {v0}%', { v0: downloadProgress })
       : isInstalling
-        ? 'Installing'
+        ? uiText('Installing…')
         : isError
-          ? 'Update failed'
-          : `Update to v${latestVersion}`
+          ? uiText('Update failed')
+          : uiText('Update available: v{v0}', { v0: latestVersion })
 
   return (
     <div ref={ref} className="relative">
       {/* Badge button */}
       <button
         onClick={() => setOpen(!open)}
+        aria-label={label}
+        aria-expanded={open}
         className={`relative flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[0.7rem] font-medium transition-colors ${
           isDownloaded
             ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-500/15 hover:bg-emerald-500/25'
@@ -235,7 +239,7 @@ export function UpdateBadge() {
               {isDownloaded && (
                 <>
                   <button
-                    onClick={() => installAndRestart()}
+                    onClick={() => setConfirmVersion(latestVersion)}
                     className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-[0.65rem] font-medium bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/25 transition-colors"
                   >
                     <RefreshCw size={11} />{uiText("Restart Now")}</button>
@@ -288,6 +292,14 @@ export function UpdateBadge() {
           </motion.div>
         )}
       </AnimatePresence>
+      <ConfirmAppUpdate
+        version={isDownloaded && confirmVersion === latestVersion ? confirmVersion : null}
+        onClose={() => setConfirmVersion(null)}
+        onInstall={() => {
+          if (isDownloaded && confirmVersion === latestVersion) void installAndRestart()
+          setConfirmVersion(null)
+        }}
+      />
     </div>
   )
 }

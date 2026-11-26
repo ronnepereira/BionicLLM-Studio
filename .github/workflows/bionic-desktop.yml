@@ -3,7 +3,6 @@ name: BionicLLM - Verify and prepare installers
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -48,7 +47,7 @@ jobs:
 
   build:
     needs: verify
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -166,7 +165,7 @@ jobs:
 
   draft:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.draft && inputs.platform == 'all')
+    if: github.event_name == 'workflow_dispatch' && inputs.draft && inputs.platform == 'all'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

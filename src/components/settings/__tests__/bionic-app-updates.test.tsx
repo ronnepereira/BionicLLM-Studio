@@ -27,7 +27,7 @@ beforeEach(() => {
 describe('BionicLLM app updates', () => {
   it('explains private preparation without offering an inaccessible automatic update', () => {
     render(<AppUpdatesSettings />)
-    expect(screen.getByText(/repositório está privado/)).toBeTruthy()
+    expect(screen.getByText(/canal está em preparação/)).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Verificar atualizações' })).toBeNull()
     expect(fixture.update.checkForUpdate).not.toHaveBeenCalled()
   })
@@ -49,6 +49,11 @@ describe('BionicLLM app updates', () => {
     render(<AppUpdatesSettings />)
     expect(fixture.update.installAndRestart).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Instalar e reiniciar' }))
+    expect(fixture.update.installAndRestart).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Agora não' }))
+    expect(fixture.update.installAndRestart).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Instalar e reiniciar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar instalação' }))
     expect(fixture.update.installAndRestart).toHaveBeenCalledOnce()
   })
 })

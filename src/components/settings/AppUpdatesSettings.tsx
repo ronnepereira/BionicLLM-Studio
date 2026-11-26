@@ -1,9 +1,13 @@
+import { useState } from 'react'
 import publication from '../../../bionic-publication.json'
 import { APP_VERSION } from '../../lib/app-version'
 import { useUpdateStore } from '../../stores/updateStore'
+import { ConfirmAppUpdate } from '../layout/ConfirmAppUpdate'
 
 export function AppUpdatesSettings() {
   const update = useUpdateStore()
+  const [confirmVersion, setConfirmVersion] = useState<string | null>(null)
+  const canInstall = update.downloadStatus === 'downloaded'
   const busy = update.isChecking || update.downloadStatus === 'downloading' || update.downloadStatus === 'installing'
   const button = 'rounded border border-gray-500/30 px-3 py-1.5 text-sm disabled:opacity-50'
   return <div className="studio-panel rounded border p-3 space-y-3" data-testid="app-update-channel">
@@ -13,7 +17,7 @@ export function AppUpdatesSettings() {
     </div>
     <p className="t-body">Versão instalada: {APP_VERSION}</p>
     {!publication.updatesEnabled ? <p className="t-body text-gray-500">
-      O repositório está privado durante a preparação. Instale as versões de teste manualmente pelo instalador. As atualizações pelo aplicativo serão ativadas após a publicação pública.
+      O canal está em preparação. Instale as versões de teste manualmente pelo instalador.
     </p> : <>
       <label className="flex items-center gap-2 t-body">
         <input type="checkbox" checked={update.autoDownload} onChange={(event) => update.setAutoDownload(event.target.checked)} />
@@ -30,12 +34,20 @@ export function AppUpdatesSettings() {
       <div className="flex flex-wrap gap-2">
         <button className={button} disabled={busy} onClick={() => void update.checkForUpdate(true)}>{update.isChecking ? 'Verificando…' : 'Verificar atualizações'}</button>
         {update.updateAvailable && ['idle', 'error'].includes(update.downloadStatus) && <button className={button} disabled={busy} onClick={() => void update.downloadUpdate()}>Baixar atualização</button>}
-        {update.downloadStatus === 'downloaded' && <button className={button} disabled={busy} onClick={() => void update.installAndRestart()}>Instalar e reiniciar</button>}
+        {canInstall && <button className={button} disabled={busy} onClick={() => setConfirmVersion(update.latestVersion)}>Instalar e reiniciar</button>}
       </div>
       {update.releaseNotes && <details><summary className="cursor-pointer t-body">O que mudou</summary><p className="whitespace-pre-wrap t-body mt-2">{update.releaseNotes}</p></details>}
     </>}
     <p className="t-micro text-gray-500">Windows e macOS sem certificado comercial. Linux e macOS são experimentais.</p>
     {publication.repository && <button className={button} onClick={update.openReleasePage}>Abrir downloads no GitHub</button>}
     <p className="t-micro text-gray-500">Atualizações da engine e dos plugins estão disponíveis separadamente nas configurações.</p>
+    <ConfirmAppUpdate
+      version={canInstall && confirmVersion === update.latestVersion ? confirmVersion : null}
+      onClose={() => setConfirmVersion(null)}
+      onInstall={() => {
+        if (canInstall && confirmVersion === update.latestVersion) void update.installAndRestart()
+        setConfirmVersion(null)
+      }}
+    />
   </div>
 }
